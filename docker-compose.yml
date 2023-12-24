@@ -1,14 +1,12 @@
 version: '3'
 services:
-  redis:
+  vlm-redis:
     container_name: vlm-redis
     image: redis
     ports:
       - '6379:6379'
-    networks:
-      - vlm-jobs-network
   
-  jobs:
+  vlm-jobs:
     container_name: vlm-jobs
     build:
       context: ./
@@ -18,10 +16,4 @@ services:
     volumes:
       - './index.json:/opt/arena/index.json'
     depends_on:
-      - redis
-    networks:
-      - vlm-jobs-network
-
-networks:
-  vlm-jobs-network:
-    name: vlm
+      - vlm-redis

@@ -1,25 +1,25 @@
-FROM node:lts-alpine AS base
+# Start with the LTS Alpine-based Node.js image
+FROM node:16-alpine AS base
 
-# Upgrade Alpine packages to avoid possible OS vulnerabilities
-# Install Tini for handling kernel signals
-RUN apk --no-cache upgrade && apk add --no-cache tini redis
+# - Upgrade alpine packages to avoid possible os vulnerabilities
+# - Tini for Handling Kernel Signals https://github.com/krallin/tini
+#   https://github.com/nodejs/docker-node/blob/master/docs/BestPractices.md#handling-kernel-signals
+# - Install Python, Redis, and build tools
+RUN apk --no-cache upgrade && \
+    apk add --no-cache tini redis python3 py3-pip build-base gcc
+
 
 WORKDIR /opt/arena
 
 FROM base AS build
 
-COPY package.json package-lock.json ./
+COPY . /opt/arena/
 RUN npm ci --only=production
-
-COPY tsconfig.json .
-COPY . .
-
 RUN npm run build
 
 FROM base
 
-COPY --from=build /opt/arena/ ./
-
+COPY --from=build /opt/arena/ .
 RUN chmod -R og+r .
 
 EXPOSE 4567

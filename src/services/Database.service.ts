@@ -1,0 +1,76 @@
+import AWS, { DynamoDB } from "aws-sdk";
+import { DocumentClient } from "aws-sdk/clients/dynamodb";
+import { Job } from "bullmq";
+
+export const mainTable = process.env.NODE_ENV === "development" ? "vlm_main_dev" : "vlm_main";
+export const analyticsTable = process.env.NODE_ENV === "development" ? "vlm_analytics_dev" : "vlm_analytics";
+export const claimsTable = process.env.NODE_ENV === "development" ? "vlm_claims_dev" : "vlm_claims";
+export const transactionsTable = process.env.NODE_ENV === "development" ? "vlm_transactions_dev" : "vlm_transactions";
+
+export let docClient: AWS.DynamoDB.DocumentClient;
+
+if (process.env.NODE_ENV === "development") {
+  AWS.config.update({
+    accessKeyId: process.env.AWS_ACCESS_KEY,
+    secretAccessKey: process.env.AWS_SECRET_KEY,
+    region: process.env.AWS_REGION,
+  });
+} else {
+  AWS.config.update({
+    region: process.env.AWS_REGION,
+  });
+}
+
+docClient = new AWS.DynamoDB.DocumentClient();
+
+export const query = async (job: Job) => {
+  const params: DynamoDB.DocumentClient.QueryInput = {
+    TableName: job.data.table || mainTable,
+    KeyConditionExpression: "#pk = :pk",
+    ExpressionAttributeNames: {
+      "#pk": "pk",
+    },
+    ExpressionAttributeValues: {
+      ":pk": job.data.pk,
+    },
+  };
+
+  job.data.filters.forEach((filter: any, i: number) => {
+    params.FilterExpression = params.FilterExpression ? `${params.FilterExpression} AND #${filter.field} = :${filter.field}` : `#${filter.field} = :${filter.field}`;
+    params.ExpressionAttributeNames![`#${filter.field}`] = filter.field;
+    params.ExpressionAttributeValues![`:${filter.field}`] = filter.value;
+  });
+
+  try {
+    const data = await docClient.query(params).promise();
+    console.log("Query results:", data.Items);
+    return data.Items;
+  } catch (err) {
+    console.error("Error querying DynamoDB", err);
+    throw err;
+  }
+};
+
+export const largeQuery: CallableFunction = async (params: DocumentClient.QueryInput, options: { cache: boolean } = { cache: false }, allData?: DocumentClient.AttributeMap[]) => {
+  if (!allData) {
+    allData = [];
+  }
+
+  if (options.cache) {
+    var data = await docClient.query(params).promise();
+  } else {
+    var data = await docClient.query(params).promise();
+  }
+
+  if (data && data.Items && data.Items.length > 0) {
+    allData = [...allData, ...data.Items];
+  }
+
+  if (!params.Limit && data.LastEvaluatedKey) {
+    params.ExclusiveStartKey = data.LastEvaluatedKey;
+    return await largeQuery(params, options, allData);
+  } else {
+    let finalData = allData;
+    return finalData;
+  }
+};
