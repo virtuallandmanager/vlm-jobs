@@ -15,7 +15,7 @@ const worker = async (job: Job<DiscordJobData>) => {
   }
   try {
     console.log(`Sending Discord message: ${message}`);
-    await axios.post(process.env.DISCORD_WEBHOOK_URL as string, {
+    await axios.post(process.env.DISCORD_JOBS_WEBHOOK_URL as string, {
       content: message,
     });
 
