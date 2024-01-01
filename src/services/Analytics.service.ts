@@ -1,11 +1,11 @@
 import { DynamoDB } from "aws-sdk";
 import { DateTime } from "luxon";
-import { docClient } from "./Database.service";
+import { analyticsTable, docClient, mainTable } from "./Database.service";
 import { Analytics } from "../models/Analytics.model";
 
 export const getAllSceneIds = async (): Promise<string[]> => {
   const params: DynamoDB.DocumentClient.QueryInput = {
-    TableName: "vlm_main",
+    TableName: mainTable,
     KeyConditionExpression: "#pk = :pk",
     ExpressionAttributeNames: {
       "#pk": "pk",
@@ -30,7 +30,7 @@ export const getAllSceneIds = async (): Promise<string[]> => {
 export const getAnalyticsActionsForScene = async (query: { sceneId: string; startDate: EpochTimeStamp; endDate: EpochTimeStamp }) => {
   const { sceneId, startDate, endDate } = query;
   const params: DynamoDB.DocumentClient.QueryInput = {
-    TableName: "vlm_analytics",
+    TableName: analyticsTable,
     IndexName: "sceneId-index",
     KeyConditionExpression: "pk = :analyticsAggregatePk and sceneId = :sceneId",
     FilterExpression: "#timestamp BETWEEN :startDate AND :endDate",
