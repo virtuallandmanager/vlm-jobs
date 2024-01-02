@@ -1,6 +1,5 @@
 import { Queue, QueueScheduler } from "bullmq";
-import connection from "../config/redis";
-import { DateTime } from "luxon";
+import { connection } from "../services/Redis.service";
 
 const queue = new Queue("claim-queue", {
   connection,
