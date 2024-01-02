@@ -25,7 +25,7 @@ export const getIncompleteClaims = async (): Promise<Giveaway.Claim[]> => {
       ":status": Giveaway.ClaimStatus.PENDING,
     },
     //filter out claims that have already been processed
-    FilterExpression: "#complete = :incomplete",
+    FilterExpression: "#status = :status",
   };
 
   try {
