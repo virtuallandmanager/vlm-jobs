@@ -36,6 +36,12 @@ const worker = async (job: Job) => {
 
   const stillPending = pendingTransactions.filter((transaction) => transaction.status === Accounting.TransactionStatus.PENDING);
 
+  if (updatedTransactions.length === 0 && pendingTransactions.length === 0) {
+    return {
+      success: true,
+    };
+  }
+
   return {
     success: true,
     message: `Updated ${updatedTransactions.length} Transactions. ${pendingTransactions.length - updatedTransactions.length} Transactions are still pending.`,

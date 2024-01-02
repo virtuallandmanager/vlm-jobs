@@ -5,6 +5,7 @@ import Arena from "bull-arena";
 import balance from "./queues/Balance.queue";
 import claims from "./queues/Claim.queue";
 import notifications from "./queues/Notification.queue";
+import transactions from "./queues/Transactions.queue";
 import analytics from "./queues/Analytics.queue";
 import { connection } from "./services/Redis.service";
 import path from "path";
@@ -80,60 +81,20 @@ async function setupBullArena() {
 
         redis: connection,
       },
+      {
+        type: "bullmq",
+
+        name: transactions.queue.name,
+
+        hostId: "VLM",
+
+        redis: connection,
+      },
     ],
   });
 
   app.use("/", arena);
-
-  // app.listen(3000, () => {
-  //   console.log("Server started on port 3000");
-  // });
 }
-
-// balanceFlow.add({
-//   name: "Balance Check Flow",
-//   queueName: balanceCheckQueue.name,
-//   data: { wallet: process.env.GIVEAWAY_WALLET_A, name: "Giveaway Wallet A" }, // This data will be dynamically populated based on the result of the parent job
-//   opts: {},
-//   children: [
-//     // {
-//     //   name: "Check Wallet Balance",
-//     //   queueName: balanceCheckQueue.name,
-//     //   data: { wallet: process.env.GIVEAWAY_WALLET_A, name: "Giveaway Wallet A" }, // This data will be dynamically populated based on the result of the parent job
-//     //   opts: {},
-//     // },
-//     {
-//       name: "Send Notification - Balance Check",
-//       queueName: notificationQueue.name,
-//       // data: {}, // This data will be dynamically populated based on the result of the parent job
-//       opts: {},
-//     },
-//   ],
-// });
-
-// analyticsFlow.add({
-//   name: "Analytics Aggregation Flow",
-//   queueName: analyticsAggregationQueue.name,
-//   data: { date: DateTime.now().minus({ days: 1 }).toUnixInteger() },
-//   opts: {},
-//   children: [
-//     // {
-//     //   name: "Create Daily Analytics Aggregate",
-//     //   queueName: analyticsAggregationQueue.name,
-//     //   opts: {},
-//     // },
-//     {
-//       name: "Send Notification - Daily Analytics Aggregate Complete",
-//       queueName: notificationQueue.name,
-//       data: {},
-//       opts: {},
-//     },
-//   ],
-// });
-
-// analyticsAggregationQueue.add("Analytics Aggregation Flow", {}, { repeat: { cron: "0 0 * * *" } });
-// balanceCheckQueue.add("Check Wallet Balance", {}, { repeat: { cron: "0 13 * * *" } });
-// balanceCheckQueue.add("Check Wallet Balance", { wallet: process.env.GIVEAWAY_WALLET_A, name: "Giveaway Wallet A" }, {});
 
 const setupBullQueues = async () => {
   analytics.setupSchedule();
@@ -179,21 +140,21 @@ const setupBullQueues = async () => {
   });
 
   transactionWorker.on("completed", async (job, result) => {
+    if (!result || !result.message) return;
     await notifications.addJob(`Send Notification - Transaction Updater`, result);
-    console.log(`Job completed with result ${JSON.stringify(job.returnvalue)}`);
   });
 
   transactionWorker.on("failed", async (job, result) => {
+    if (!result || !result.message) return;
+
     await notifications.addJob(`Send Notification - Transaction Updater`, result);
-    console.log(`Job failed with reason ${JSON.stringify(job.failedReason)}`);
   });
 
   notificationWorker.on("completed", async (job) => {
-    console.log(`Job completed with result ${JSON.stringify(job.returnvalue)}`);
   });
 
   notificationWorker.on("failed", async (job) => {
-    // console.log(`Job failed with reason ${JSON.stringify(job.failedReason)}`);
+    console.log(`Job failed with reason ${JSON.stringify(job.failedReason)}`);
   });
 
   process.on("SIGTERM", async () => {

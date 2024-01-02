@@ -10,7 +10,6 @@ const worker = async (job: Job) => {
     // no incomplete claims found
     return {
       success: false,
-      message: `No incomplete claims found`,
     };
   }
 
