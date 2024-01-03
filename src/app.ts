@@ -107,7 +107,7 @@ const setupBullQueues = async () => {
 
   const claimWorker = new Worker(claims.queue.name, resolveWorkerPath("Claim.worker"), { connection });
 
-  const transactionWorker = new Worker(claims.queue.name, resolveWorkerPath("Transaction.worker"), { connection });
+  const transactionWorker = new Worker(transactions.queue.name, resolveWorkerPath("Transaction.worker"), { connection });
 
   const notificationWorker = new Worker(notifications.queue.name, resolveWorkerPath("Discord.worker"), { connection });
 
