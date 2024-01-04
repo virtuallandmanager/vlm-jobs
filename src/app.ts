@@ -114,7 +114,7 @@ const setupBullQueues = async () => {
   analyticsAggregationWorker.on("completed", async (job, result) => {
     if (!result || !result.message) return;
     await notifications.addJob(`Send Notification - Aggregate Created`, result.message);
-    console.log(`Job completed with result ${JSON.stringify(job.returnvalue)}`);
+    console.log(`Job completed with result ${JSON.stringify(result)}`);
   });
 
   analyticsAggregationWorker.on("failed", async (job) => {
@@ -124,23 +124,23 @@ const setupBullQueues = async () => {
   balanceCheckWorker.on("completed", async (job, result) => {
     if (!result || !result.message) return;
     await notifications.addJob(`Send Notification - Balance Check`, result);
-    console.log(`Job completed with result ${JSON.stringify(job.returnvalue)}`);
+    console.log(`Job completed with result ${result}`);
   });
 
   balanceCheckWorker.on("failed", async (job, result) => {
     await notifications.addJob(`Send Notification - Balance Check`, result);
-    console.log(`Job failed with reason ${JSON.stringify(job.failedReason)}`);
+    console.log(`Job failed with reason ${job.failedReason}`);
   });
 
   claimWorker.on("completed", async (job, result) => {
     if (!result || !result.message) return;
     await notifications.addJob(`Send Notification - Claims Check`, result);
-    console.log(`Job completed with result ${JSON.stringify(job.returnvalue)}`);
+    console.log(`Job completed with result ${job.returnvalue}`);
   });
 
   claimWorker.on("failed", async (job, result) => {
     await notifications.addJob(`Send Notification - Claims Check`, result);
-    console.log(`Job failed with reason ${JSON.stringify(job.failedReason)}`);
+    console.log(`Job failed with reason ${job.failedReason}`);
   });
 
   transactionWorker.on("completed", async (job, result) => {
@@ -158,7 +158,7 @@ const setupBullQueues = async () => {
   });
 
   notificationWorker.on("failed", async (job) => {
-    console.log(`Job failed with reason ${JSON.stringify(job.failedReason)}`);
+    console.log(`Job failed with reason ${job.failedReason}`);
   });
 
   process.on("SIGTERM", async () => {
@@ -166,6 +166,9 @@ const setupBullQueues = async () => {
 
     await balanceCheckWorker.close();
     await notificationWorker.close();
+    await claimWorker.close();
+    await transactionWorker.close();
+    await analyticsAggregationWorker.close();
 
     console.info("All closed");
   });
