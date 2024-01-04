@@ -3,8 +3,8 @@ import { DateTime } from "luxon";
 import { createAnalyticsAggregates, getAllSceneIds, getAnalyticsActionsForScene, pushAnalyticsAggregatesToDynamoDB, setTTLForActions } from "../services/Analytics.service";
 
 const worker = async (job: Job) => {
-  const startDate = DateTime.fromSeconds(job.data.date).startOf("day").toUTC().toUnixInteger(),
-    endDate = DateTime.fromSeconds(job.data.date).endOf("day").toUTC().toUnixInteger();
+  const startDate = DateTime.fromFormat(job.data.date, "yyyy-MM-dd").startOf("day").toUTC().toUnixInteger(),
+    endDate = DateTime.fromFormat(job.data.date, "yyyy-MM-dd").endOf("day").toUTC().toUnixInteger();
   let aggregates;
 
   const sceneIds: string[] = await getAllSceneIds();
