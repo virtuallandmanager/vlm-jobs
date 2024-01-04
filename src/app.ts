@@ -111,7 +111,9 @@ const setupBullQueues = async () => {
 
   const notificationWorker = new Worker(notifications.queue.name, resolveWorkerPath("Discord.worker"), { connection });
 
-  analyticsAggregationWorker.on("completed", async (job) => {
+  analyticsAggregationWorker.on("completed", async (job, result) => {
+    if (!result || !result.message) return;
+    await notifications.addJob(`Send Notification - Aggregate Created`, result.message);
     console.log(`Job completed with result ${JSON.stringify(job.returnvalue)}`);
   });
 
@@ -120,6 +122,7 @@ const setupBullQueues = async () => {
   });
 
   balanceCheckWorker.on("completed", async (job, result) => {
+    if (!result || !result.message) return;
     await notifications.addJob(`Send Notification - Balance Check`, result);
     console.log(`Job completed with result ${JSON.stringify(job.returnvalue)}`);
   });
@@ -130,6 +133,7 @@ const setupBullQueues = async () => {
   });
 
   claimWorker.on("completed", async (job, result) => {
+    if (!result || !result.message) return;
     await notifications.addJob(`Send Notification - Claims Check`, result);
     console.log(`Job completed with result ${JSON.stringify(job.returnvalue)}`);
   });

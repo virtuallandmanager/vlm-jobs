@@ -59,7 +59,8 @@ export const createAnalyticsAggregates = async (query: { sceneId: string; analyt
   // group each metric by the action property and count how many of each action took place during each minute
   byMinute = analyticsActions.reduce((acc: any, metric: Analytics.Action) => {
     const { name, ts } = metric;
-    const minute = DateTime.fromSeconds(ts).toUTC().startOf("minute").toISO();
+    const minute = DateTime.fromMillis(ts).startOf("minute").toISO();
+    if (!minute) return acc;
     if (!acc[minute]) {
       acc[minute] = {};
     }
@@ -72,7 +73,8 @@ export const createAnalyticsAggregates = async (query: { sceneId: string; analyt
 
   byHour = analyticsActions.reduce((acc: any, metric: Analytics.Action) => {
     const { name, ts } = metric;
-    const hour = DateTime.fromSeconds(ts).toUTC().startOf("hour").toISO();
+    const hour = DateTime.fromMillis(ts).toUTC().startOf("hour").toISO();
+    if (!hour) return acc;
     if (!acc[hour]) {
       acc[hour] = {};
     }
@@ -85,7 +87,8 @@ export const createAnalyticsAggregates = async (query: { sceneId: string; analyt
 
   byDay = analyticsActions.reduce((acc: any, metric: Analytics.Action) => {
     const { name, ts } = metric;
-    const day = DateTime.fromSeconds(ts).toUTC().startOf("day").toISO();
+    const day = DateTime.fromMillis(ts).toUTC().startOf("day").toISO();
+    if (!day) return acc;
     if (!acc[day]) {
       acc[day] = {};
     }

@@ -5,7 +5,7 @@ import { createAnalyticsAggregates, getAllSceneIds, getAnalyticsActionsForScene,
 const worker = async (job: Job) => {
   const startDate = DateTime.fromFormat(job.data.date, "yyyy-MM-dd").startOf("day").toUTC().toUnixInteger(),
     endDate = DateTime.fromFormat(job.data.date, "yyyy-MM-dd").endOf("day").toUTC().toUnixInteger();
-  let aggregates;
+  let allAggregates;
 
   const sceneIds: string[] = await getAllSceneIds();
   if (!sceneIds?.length) {
@@ -22,7 +22,8 @@ const worker = async (job: Job) => {
       if (!analyticsActions?.length) return;
 
       const { minute, hour, day } = await createAnalyticsAggregates({ sceneId, analyticsActions, startDate, endDate });
-      aggregates = { minute, hour, day };
+      const aggregates = { minute, hour, day };
+      allAggregates.push(aggregates);
       await pushAnalyticsAggregatesToDynamoDB([minute, hour, day]);
       await setTTLForActions({ analyticsActions });
     }),
@@ -31,7 +32,6 @@ const worker = async (job: Job) => {
   return {
     success: true,
     message: `Created Analytics Aggregates for ${DateTime.fromSeconds(startDate).toUTC().toISODate()}`,
-    aggregates,
   };
 };
 
