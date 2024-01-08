@@ -27,6 +27,15 @@ const worker = async (job: Job) => {
     return {
       success: false,
     };
+  } else {
+    await Promise.all([
+      incompleteClaims.forEach(async (claim) => {
+        if (claim.status === Giveaway.ClaimStatus.PENDING) {
+          claim.status = Giveaway.ClaimStatus.IN_PROGRESS;
+          await updateClaimStatus(claim);
+        }
+      }),
+    ]);
   }
 
   const transactionStates = await Promise.all(
@@ -38,7 +47,6 @@ const worker = async (job: Job) => {
           const itemsForGiveaway = await getGiveawayItems(giveaway.items);
           if (!itemsForGiveaway) return { success: false, transactions: [], claim };
           const groupedClaimItems = findItemsWithSharedContract(itemsForGiveaway);
-          console.log("groupedClaimItems:", groupedClaimItems);
           const transactionResponses = await sendWearables(groupedClaimItems, claim);
           const successfulResponses: { success: boolean; transaction: ContractTransaction }[] = transactionResponses.filter((response) => response?.success && response?.transaction);
           await increaseClaimCountOfGiveaway(claim.giveawayId, successfulResponses.length);

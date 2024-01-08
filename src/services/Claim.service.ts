@@ -147,11 +147,16 @@ export const sendWearables = async (groupedItemIds: { [contractAddress: string]:
           await new Promise((resolve) => setTimeout(resolve, 1000));
           const { options } = estimateGasOptionsResponse;
           const mintTransaction = await mintNewWearables(nftContract, groupedItemIds[contractAddress], claim.to, options);
-          claim.status = mintTransaction.status;
-          await updateClaimStatus(claim);
+          if (claim.status !== mintTransaction.status) {
+            await updateClaimStatus({ ...claim, status: mintTransaction.status });
+          }
           return mintTransaction;
         } catch (error: any) {
-          if (error.code === "UNPREDICTABLE_GAS_LIMIT" && error.reason === "execution reverted: _issueToken: ITEM_EXHAUSTED") {
+          const mintedOut = error.code === "UNPREDICTABLE_GAS_LIMIT" && error.reason === "execution reverted: _issueToken: ITEM_EXHAUSTED";
+          if (mintedOut && groupedItemIds.length) {
+            claim.status = Giveaway.ClaimStatus.PARTIAL_FAILURE;
+            await updateClaimStatus(claim);
+          } else if (claim.status === Giveaway.ClaimStatus.IN_PROGRESS) {
             claim.status = Giveaway.ClaimStatus.FAILED;
             await updateClaimStatus(claim);
           }
