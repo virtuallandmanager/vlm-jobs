@@ -100,6 +100,7 @@ const setupBullQueues = async () => {
   analytics.setupSchedule();
   balance.setupSchedule();
   claims.setupSchedule();
+  transactions.setupSchedule();
 
   const analyticsAggregationWorker = new Worker(analytics.queue.name, resolveWorkerPath("Analytics.worker"), { connection });
 
@@ -154,8 +155,7 @@ const setupBullQueues = async () => {
     await notifications.addJob(`Send Notification - Transaction Updater`, result);
   });
 
-  notificationWorker.on("completed", async (job) => {
-  });
+  notificationWorker.on("completed", async (job) => {});
 
   notificationWorker.on("failed", async (job) => {
     console.log(`Job failed with reason ${job.failedReason}`);
