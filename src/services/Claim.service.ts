@@ -3,6 +3,7 @@
 import { DynamoDB } from "aws-sdk";
 import { claimsTable, docClient, largeQuery, mainTable } from "./Database.service";
 import { Giveaway } from "../models/Giveaway.model";
+import { Event } from "../models/Event.model";
 import { ContractTransaction, ethers } from "ethers";
 import dclNft from "../abis/dclNft";
 import { Accounting } from "../models/Accounting.model";
@@ -46,6 +47,55 @@ export const getIncompleteClaims = async (): Promise<Giveaway.Claim[]> => {
   }
 };
 
+export const getInsufficientCreditClaims = async (): Promise<Giveaway.Claim[]> => {
+  const params: DynamoDB.DocumentClient.QueryInput = {
+    TableName: claimsTable,
+    KeyConditionExpression: "#pk = :pk",
+    ExpressionAttributeNames: {
+      "#pk": "pk",
+      "#status": "status",
+    },
+    ExpressionAttributeValues: {
+      ":pk": Giveaway.Claim.pk,
+      ":status": Giveaway.ClaimStatus.INSUFFICIENT_CREDIT,
+    },
+    //filter down to claims that were insufficient before
+    FilterExpression: "#status = :status",
+  };
+
+  try {
+    const data = await largeQuery(params);
+    console.log("data:", data);
+    if (!data.length) {
+      return [];
+    }
+    return data as Giveaway.Claim[];
+  } catch (err) {
+    console.error("Error querying DynamoDB", err);
+    throw err;
+  }
+};
+
+// Get Giveaway By Id
+export const getEventById = async (eventId: string): Promise<Event.Config> => {
+  const params: DynamoDB.DocumentClient.GetItemInput = {
+    TableName: mainTable,
+    Key: {
+      pk: Event.Config.pk,
+      sk: eventId,
+    },
+  };
+
+  try {
+    const data = await docClient.get(params).promise();
+
+    return data.Item as Event.Config;
+  } catch (err) {
+    console.error("Error querying DynamoDB", err);
+    throw err;
+  }
+};
+
 // Get Giveaway By Id
 export const getGiveawayById = async (giveawayId: string): Promise<Giveaway.Config> => {
   const params: DynamoDB.DocumentClient.GetItemInput = {
@@ -65,6 +115,7 @@ export const getGiveawayById = async (giveawayId: string): Promise<Giveaway.Conf
     throw err;
   }
 };
+
 export const getGiveawayClaimById = async (sk: string): Promise<Giveaway.Claim> => {
   const params: DynamoDB.DocumentClient.GetItemInput = {
     TableName: mainTable,

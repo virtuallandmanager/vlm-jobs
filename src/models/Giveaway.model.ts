@@ -136,6 +136,7 @@ export namespace Giveaway {
     PENDING = "pending",
     QUEUED = "queued",
     IN_PROGRESS = "in_progress",
+    INSUFFICIENT_CREDIT = "insufficient_credit",
     COMPLETE = "complete",
     PARTIAL_FAILURE = "partial_failure",
     FAILED = "failed",

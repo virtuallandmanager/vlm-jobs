@@ -3,12 +3,13 @@ import {
   findItemsWithSharedContract,
   getIncompleteClaims,
   getGiveawayById,
-  getGiveawayItemById,
+  getInsufficientCreditClaims,
   sendWearables,
   getGiveawayItems,
   getGasLimits,
   updateClaimStatus,
   increaseClaimCountOfGiveaway,
+  getEventById,
 } from "../services/Claim.service";
 import { Giveaway } from "../models/Giveaway.model";
 import { addBlockchainTransactionIds } from "../services/Transaction.service";
@@ -18,18 +19,50 @@ import { Accounting } from "../models/Accounting.model";
 export let gasLimits: { [key in Accounting.TxLimitsType]?: { unit: string; value: number } } = {};
 
 const worker = async (job: Job) => {
-  gasLimits = await getGasLimits("ETH:137");
-  let incompleteClaims = await getIncompleteClaims();
-  console.log("incompleteClaims:", incompleteClaims);
+  if (job.data.type == "processPendingClaims") {
+    const incompleteClaims = await getIncompleteClaims();
+    return await processPendingClaims(incompleteClaims);
+  } else if (job.data.type === "rejuvenateClaims") {
+    const insufficientCreditClaims = await getInsufficientCreditClaims();
+    return await rejuvenateClaims(insufficientCreditClaims);
+  }
+};
 
-  if (!incompleteClaims?.length) {
+const rejuvenateClaims = async (claims: Giveaway.Claim[]) => {
+  if (!claims?.length) {
     // no incomplete claims found
     return {
       success: false,
     };
   } else {
     await Promise.all([
-      incompleteClaims.forEach(async (claim) => {
+      claims.forEach(async (claim) => {
+        const event = await getEventById(claim.eventId);
+        if ((event?.eventStart && event?.eventStart > Date.now()) || (event?.eventEnd && event.eventEnd < Date.now())) return { success: false };
+        const giveaway = await getGiveawayById(claim.giveawayId);
+        if (!giveaway?.allocatedCredits) return { success: false };
+        claim.status = Giveaway.ClaimStatus.PENDING;
+        await updateClaimStatus(claim);
+      }),
+    ]);
+  }
+  return {
+    success: true,
+    message: `Rejuvenated ${claims.length} Claims`,
+  };
+};
+
+const processPendingClaims = async (claims: Giveaway.Claim[]) => {
+  gasLimits = await getGasLimits("ETH:137");
+
+  if (!claims?.length) {
+    // no incomplete claims found
+    return {
+      success: false,
+    };
+  } else {
+    await Promise.all([
+      claims.forEach(async (claim) => {
         if (claim.status === Giveaway.ClaimStatus.PENDING) {
           claim.status = Giveaway.ClaimStatus.IN_PROGRESS;
           await updateClaimStatus(claim);
@@ -39,11 +72,16 @@ const worker = async (job: Job) => {
   }
 
   const transactionStates = await Promise.all(
-    incompleteClaims.map(
+    claims.map(
       async (claim: Giveaway.Claim): Promise<{ success: boolean; transactions: Array<ContractTransaction>; claim: Giveaway.Claim } | undefined> => {
         try {
           const giveaway = await getGiveawayById(claim.giveawayId);
           if (!giveaway?.items) return { success: false, transactions: [], claim };
+          if (!giveaway?.allocatedCredits) {
+            claim.status = Giveaway.ClaimStatus.INSUFFICIENT_CREDIT;
+            await updateClaimStatus(claim);
+            return { success: false, transactions: [], claim };
+          }
           const itemsForGiveaway = await getGiveawayItems(giveaway.items);
           if (!itemsForGiveaway) return { success: false, transactions: [], claim };
           const groupedClaimItems = findItemsWithSharedContract(itemsForGiveaway);
@@ -68,8 +106,8 @@ const worker = async (job: Job) => {
     transactionStates.map(async (transactionState) => {
       if (!transactionState?.success || !transactionState?.transactions?.length) return;
       const { transactions, claim } = transactionState,
-        blockchainTxIds = transactions.map((transaction) => transaction.hash);
-      claim.status = Giveaway.ClaimStatus.IN_PROGRESS;
+        blockchainTxIds = transactions.map((transaction) => transaction.hash).filter((hash) => hash);
+      if (!blockchainTxIds.length) return;
       return await addBlockchainTransactionIds(claim.transactionId, blockchainTxIds);
     })
   );
@@ -77,7 +115,7 @@ const worker = async (job: Job) => {
   return {
     success: true,
     transactionStates,
-    message: `Processed ${incompleteClaims.length} Claims`,
+    message: `Processed ${claims.length} Claims`,
     updatedTransactions,
   };
 };

@@ -16,4 +16,17 @@ export const addJob = async (name: string, data: any) => {
   });
 };
 
-export default { queue, scheduler, addJob };
+export const setupSchedule = async () => {
+  await queue.add(
+    `Process Pending Transactions`,
+    { type: "processPendingTransactions" },
+    {
+      repeat: {
+        pattern: "*/5 * * * *",
+      },
+      jobId: "periodic-transaction-check",
+    }
+  );
+};
+
+export default { queue, scheduler, addJob, setupSchedule };
