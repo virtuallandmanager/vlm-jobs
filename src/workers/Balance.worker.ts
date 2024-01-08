@@ -10,8 +10,7 @@ const worker = async (job: Job) => {
     const walletName = job.data.name || walletId;
     if (!walletId) return { message: "No wallet ID provided" };
     const response = await axios.get(`${MATIC_API_URL}?module=account&action=balance&address=${walletId}`);
-    // const balance = Number(ethers.utils.formatUnits(response.data.result, "ether"));
-    const balance = 0;
+    const balance = Number(ethers.utils.formatUnits(response.data.result, "ether"));
     console.log(`Balance for wallet ${walletId}: ${balance}`);
     if (balance < 20) {
       return {

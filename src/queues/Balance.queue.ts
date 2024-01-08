@@ -1,5 +1,6 @@
 import { Queue, QueueScheduler } from "bullmq";
 import { connection } from "../services/Redis.service";
+import { DateTime } from "luxon";
 
 const queue = new Queue("wallet-balance-check", {
   connection,
@@ -22,4 +23,10 @@ export const setupSchedule = async () => {
   );
 };
 
-export default { queue, scheduler, setupSchedule };
+export const addJob = async (name: string, data: any) => {
+  await queue.add(name, data, {
+    jobId: DateTime.now().toISO(),
+  });
+};
+
+export default { queue, scheduler, setupSchedule, addJob };

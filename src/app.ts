@@ -112,6 +112,8 @@ const setupBullQueues = async () => {
 
   const notificationWorker = new Worker(notifications.queue.name, resolveWorkerPath("Discord.worker"), { connection });
 
+  balance.addJob("Initial Balance Check", { wallet: process.env.GIVEAWAY_WALLET_A, name: "Giveaway Wallet A" });
+
   analyticsAggregationWorker.on("completed", async (job, result) => {
     if (!result || !result.message) return;
     await notifications.addJob(`Send Notification - Aggregate Created`, result.message);
