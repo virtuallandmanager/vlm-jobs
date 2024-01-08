@@ -21,7 +21,6 @@ const worker = async (job: Job<DiscordJobData>) => {
 
     return `Message sent: ${message}`;
   } catch (error) {
-    console.error(error);
     throw error;
   }
 };

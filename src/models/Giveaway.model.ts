@@ -61,7 +61,7 @@ export namespace Giveaway {
     giveawayId: string;
     transactionId: string;
     claimTs?: number;
-    status?: ClaimStatus.PENDING;
+    status?: ClaimStatus = ClaimStatus.PENDING;
     analyticsRecordId: string;
     ts?: EpochTimeStamp = DateTime.now().toUnixInteger();
 
@@ -137,6 +137,7 @@ export namespace Giveaway {
     QUEUED = "queued",
     IN_PROGRESS = "in_progress",
     COMPLETE = "complete",
+    FAILED = "failed",
   }
 
   export enum ClaimRejection {

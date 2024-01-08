@@ -66,6 +66,32 @@ export namespace Accounting {
     }
   }
 
+  export class TxLimits {
+    static pk: string = "vlm:transaction:limits";
+    pk?: string = TxLimits.pk;
+    sk?: "MATIC" | "USD" | "MANA" | "ETH" | "WETH" | "WMATIC";
+    network?: "MATIC" | "ETH" | "MUMBAI" | "GOERLI";
+    limits: { [key in TxLimitsType]?: { unit: string; value: number } } = {};
+
+    constructor(config: Partial<TxLimits>) {
+      Object.assign(this, config);
+      this.sk = config.sk;
+      this.network = config?.network;
+      this.limits = config?.limits || this.limits;
+    }
+  }
+
+  export enum TxLimitsType {
+    GAS_PRICE = "gas_price",
+    GAS_LIMIT = "gas_limit",
+    GAS_BUFFER = "gas_buffer",
+    HOURLY_COST = "hourly_cost",
+    DAILY_COST = "daily_cost",
+    WEEKLY_COST = "weekly_cost",
+    MONTHLY_COST = "monthly_cost",
+    YEARLY_COST = "yearly_cost",
+  }
+
   export enum TransactionType {
     CREDIT_PURCHASE = "credit_purchase",
     ITEM_GIVEAWAY = "item_giveaway",

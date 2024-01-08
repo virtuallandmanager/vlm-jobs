@@ -2,7 +2,6 @@ import { DynamoDB } from "aws-sdk";
 import { Accounting } from "../models/Accounting.model";
 import { docClient, transactionsTable } from "./Database.service";
 
-
 // Get all pending transactions
 export const getPendingAirdropTransactions = async (): Promise<Accounting.Transaction[]> => {
   const params: DynamoDB.DocumentClient.QueryInput = {

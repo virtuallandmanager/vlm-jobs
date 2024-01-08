@@ -1,8 +1,24 @@
 import { Job } from "bullmq";
-import { findItemsWithSharedContract, getIncompleteClaims, getGiveawayById, getGiveawayItemById, sendWearables, getGiveawayItems } from "../services/Claim.service";
+import {
+  findItemsWithSharedContract,
+  getIncompleteClaims,
+  getGiveawayById,
+  getGiveawayItemById,
+  sendWearables,
+  getGiveawayItems,
+  getGasLimits,
+  updateClaimStatus,
+  increaseClaimCountOfGiveaway,
+} from "../services/Claim.service";
 import { Giveaway } from "../models/Giveaway.model";
+import { addBlockchainTransactionIds } from "../services/Transaction.service";
+import { ContractReceipt, ContractTransaction } from "ethers";
+import { Accounting } from "../models/Accounting.model";
+
+export let gasLimits: { [key in Accounting.TxLimitsType]?: { unit: string; value: number } } = {};
 
 const worker = async (job: Job) => {
+  gasLimits = await getGasLimits("ETH:137");
   let incompleteClaims = await getIncompleteClaims();
   console.log("incompleteClaims:", incompleteClaims);
 
@@ -14,25 +30,39 @@ const worker = async (job: Job) => {
   }
 
   const transactionStates = await Promise.all(
-    incompleteClaims.map(async (claim: Giveaway.Claim) => {
-      const giveaway = await getGiveawayById(claim.giveawayId);
-      if (!giveaway?.items) return;
-      const itemsForGiveaway = await getGiveawayItems(giveaway.items);
-      if (!itemsForGiveaway) return;
-      const groupedClaimItems = findItemsWithSharedContract(itemsForGiveaway);
-      console.log("groupedClaimItems:", groupedClaimItems);
-      const transactionResponses = await sendWearables(groupedClaimItems, claim);
-      const successfulReponses = transactionResponses.filter((response) => response?.success);
-      const transactions = successfulReponses.map((response) => response);
-      return { transactions, claim };
-    })
+    incompleteClaims.map(
+      async (claim: Giveaway.Claim): Promise<{ success: boolean; transactions: Array<ContractTransaction>; claim: Giveaway.Claim } | undefined> => {
+        try {
+          const giveaway = await getGiveawayById(claim.giveawayId);
+          if (!giveaway?.items) return { success: false, transactions: [], claim };
+          const itemsForGiveaway = await getGiveawayItems(giveaway.items);
+          if (!itemsForGiveaway) return { success: false, transactions: [], claim };
+          const groupedClaimItems = findItemsWithSharedContract(itemsForGiveaway);
+          console.log("groupedClaimItems:", groupedClaimItems);
+          const transactionResponses = await sendWearables(groupedClaimItems, claim);
+          const successfulResponses: { success: boolean; transaction: ContractTransaction }[] = transactionResponses.filter((response) => response?.success && response?.transaction);
+          await increaseClaimCountOfGiveaway(claim.giveawayId, successfulResponses.length);
+          const transactions = successfulResponses.map((response) => response.transaction);
+          return { success: true, transactions, claim };
+        } catch (error) {
+          console.error("Error processing claim", error);
+          return {
+            success: false,
+            transactions: [],
+            claim,
+          };
+        }
+      }
+    )
   );
 
   const updatedTransactions = await Promise.all(
     transactionStates.map(async (transactionState) => {
-      if (!transactionState?.transactions?.length) return;
-      const { transactions, claim } = transactionState;
-      // return await addBlockchainTransactionIds(claim.transactionId, transactions);
+      if (!transactionState?.success || !transactionState?.transactions?.length) return;
+      const { transactions, claim } = transactionState,
+        blockchainTxIds = transactions.map((transaction) => transaction.hash);
+      claim.status = Giveaway.ClaimStatus.IN_PROGRESS;
+      return await addBlockchainTransactionIds(claim.transactionId, blockchainTxIds);
     })
   );
 
@@ -40,6 +70,7 @@ const worker = async (job: Job) => {
     success: true,
     transactionStates,
     message: `Processed ${incompleteClaims.length} Claims`,
+    updatedTransactions,
   };
 };
 

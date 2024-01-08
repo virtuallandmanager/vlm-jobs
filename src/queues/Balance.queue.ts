@@ -12,7 +12,7 @@ export const scheduler = new QueueScheduler(queue.name, {
 export const setupSchedule = async () => {
   await queue.add(
     `Check Wallet Balance`,
-    { wallet: process.env.GIVEAWAY_WALLET_A },
+    { wallet: process.env.GIVEAWAY_WALLET_A, name: "Giveaway Wallet A" },
     {
       repeat: {
         pattern: "0 13 * * *",

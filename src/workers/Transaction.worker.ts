@@ -2,6 +2,8 @@ import { Job } from "bullmq";
 import { getPendingAirdropTransactions, updateTransaction } from "../services/Transaction.service";
 import { getBlockchainTransactionStatus } from "../services/Blockchain.service";
 import { Accounting } from "../models/Accounting.model";
+import { getGiveawayClaimById, updateClaimStatus } from "../services/Claim.service";
+import { Giveaway } from "../models/Giveaway.model";
 
 const worker = async (job: Job) => {
   const pendingTransactions = await getPendingAirdropTransactions();
@@ -21,6 +23,12 @@ const worker = async (job: Job) => {
 
     if (transactionPending) {
       continue;
+    }
+
+    if (transactionComplete && transaction.txType == Accounting.TransactionType.ITEM_GIVEAWAY && transaction.claimId) {
+      const claim = await getGiveawayClaimById(transaction.claimId);
+      claim.status = Giveaway.ClaimStatus.COMPLETE;
+      await updateClaimStatus(claim);
     }
 
     if (transactionComplete) {
