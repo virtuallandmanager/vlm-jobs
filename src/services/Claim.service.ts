@@ -134,6 +134,7 @@ export const getGiveawayClaimById = async (sk: string): Promise<Giveaway.Claim> 
     throw err;
   }
 };
+
 export const getGiveawayItemById = async (itemId: string): Promise<Giveaway.Item> => {
   const params: DynamoDB.DocumentClient.GetItemInput = {
     TableName: mainTable,
@@ -187,6 +188,7 @@ export const findItemsWithSharedContract = (items: Giveaway.Item[]): { [contract
 // Send Wearables For One Claim
 export const sendWearables = async (groupedItemIds: { [contractAddress: string]: string[] }, claim: Giveaway.Claim): Promise<{ success: boolean; transaction: ContractTransaction; error?: any }[]> => {
   try {
+    const blockchainTxIds = [];
     return await Promise.all(
       Object.keys(groupedItemIds).map(async (contractAddress) => {
         const nftContract = new ethers.Contract(contractAddress, dclNft, ethersWallet);
@@ -313,12 +315,12 @@ export const increaseClaimCountOfGiveaway = async (giveawayId: string, claimCoun
       pk: Giveaway.Config.pk,
       sk: giveawayId,
     },
-    UpdateExpression: "ADD #claims :claimCount, SUBTRACT #allocatedCredits :claimCount",
+    UpdateExpression: "ADD #claims :claimCount, ADD #allocatedCredits :claimCount",
     ExpressionAttributeNames: {
       "#claims": "claimCount",
     },
     ExpressionAttributeValues: {
-      ":claimCount": claimCount,
+      ":claimCount": -claimCount,
     },
   };
 
@@ -339,12 +341,12 @@ export const decreaseCreditAllocationOfGiveaway = async (allocationId: string) =
       pk: Accounting.CreditAllocation.pk,
       sk: allocationId,
     },
-    UpdateExpression: "SUBTRACT #allocatedCredits :one",
+    UpdateExpression: "ADD #allocatedCredits :one",
     ExpressionAttributeNames: {
       "#allocatedCredits": "allocatedCredits",
     },
     ExpressionAttributeValues: {
-      ":one": 1,
+      ":one": -1,
     },
   };
 
