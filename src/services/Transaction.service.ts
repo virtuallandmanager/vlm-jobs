@@ -18,7 +18,6 @@ export const getPendingAirdropTransactions = async (): Promise<Accounting.Transa
       ":pending": Accounting.TransactionStatus.PENDING,
       ":txType": Accounting.TransactionType.ITEM_GIVEAWAY,
     },
-    //filter out claims that have already been processed
     FilterExpression: "#txType = :txType",
   };
 
@@ -29,7 +28,7 @@ export const getPendingAirdropTransactions = async (): Promise<Accounting.Transa
     }
     return data.Items as Accounting.Transaction[];
   } catch (err) {
-    console.error("Error querying DynamoDB", err);
+    console.error("Error querying DynamoDB - getPendingAirdropTransactions", err);
     throw err;
   }
 };
@@ -54,7 +53,7 @@ export const getTransactionById = async (transactionId?: string) => {
     }
     return data.Item as Accounting.Transaction;
   } catch (err) {
-    console.error("Error querying DynamoDB", err);
+    console.error("Error getting item from DynamoDB - getTransactionById", err);
     throw err;
   }
 };
@@ -69,20 +68,25 @@ export const updateTransaction = async (transaction: Accounting.Transaction) => 
   try {
     await docClient.put(params).promise();
   } catch (err) {
-    console.error("Error querying DynamoDB", err);
+    console.error("Error putting item on DynamoDB - updateTransaction", err);
     throw err;
   }
 };
 
 // Add Blockchain Transaction Ids to VLM Transaction
 export const addBlockchainTransactionIds = async (transactionId: string, blockchainTxIds: string[]) => {
-  const transaction = await getTransactionById(transactionId);
-  if (!transaction) {
-    throw new Error("Transaction not found");
+  try {
+    const transaction = await getTransactionById(transactionId);
+    if (!transaction) {
+      throw new Error("Transaction not found");
+    }
+    transaction.blockchainTxIds = blockchainTxIds;
+    await updateTransaction(transaction);
+    return transaction;
+  } catch (err) {
+    console.error("Error adding blockchain transaction ids", err);
+    throw err;
   }
-  transaction.blockchainTxIds = blockchainTxIds;
-  await updateTransaction(transaction);
-  return transaction;
 };
 
 // Mark VLM Transaction as Complete

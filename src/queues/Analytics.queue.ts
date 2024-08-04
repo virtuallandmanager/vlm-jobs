@@ -18,9 +18,16 @@ export const setupSchedule = async () => {
       repeat: {
         pattern: "0 0 * * *",
       },
-      jobId: 'nightly-analytics-aggregation',
+      jobId: "nightly-analytics-aggregation",
     }
   );
 };
 
-export default { queue, scheduler, setupSchedule };
+export const addJob = async (name: string, data: any) => {
+  console.log('Adding Job: ' + name)
+  await queue.add(name, data, {
+    jobId: data.date,
+  });
+};
+
+export default { queue, scheduler, setupSchedule, addJob };

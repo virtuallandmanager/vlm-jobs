@@ -107,7 +107,7 @@ const processPendingClaims = async (claims: Giveaway.Claim[]) => {
       if (!transactionState?.success || !transactionState?.transactions?.length) return;
       const { transactions, claim } = transactionState,
         blockchainTxIds = transactions.map((transaction) => transaction.hash).filter((hash) => hash);
-      if (!blockchainTxIds.length) return;
+      if (!blockchainTxIds.length) return transactionState;
       return await addBlockchainTransactionIds(claim.transactionId, blockchainTxIds);
     })
   );

@@ -31,7 +31,7 @@ export const getBlockchainTransactionStatus = async (txHash: string, alchemyProv
     const provider = alchemyProvider || alchemyMatic;
     const txReceipt = await provider.core.getTransactionReceipt(txHash);
     if (txReceipt) {
-      // Transaction is confirmed - 1 for success, 0 for failure
+      // Transaction is confirmed
       return txReceipt.status ? Accounting.TransactionStatus.COMPLETED : Accounting.TransactionStatus.FAILED;
     } else {
       // Transaction is not confirmed yet

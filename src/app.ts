@@ -1,4 +1,4 @@
-import { Queue, Worker, QueueScheduler, FlowProducer } from "bullmq";
+import { Queue, Worker, QueueScheduler, FlowProducer, QueueEvents } from "bullmq";
 import { DateTime } from "luxon";
 import express from "express";
 import Arena from "bull-arena";
@@ -9,36 +9,71 @@ import transactions from "./queues/Transactions.queue";
 import analytics from "./queues/Analytics.queue";
 import { connection } from "./services/Redis.service";
 import path from "path";
+import { getAllSceneIds, getAnalyticsActionsForScene } from "./services/Analytics.service";
+
+// const __dirname = path.dirname(__filename);
 
 export function resolveWorkerPath(workerFileName: string): string {
   if (process.env.NODE_ENV === "production") {
     // In production, use the compiled JavaScript files in the 'dist' folder
-    return path.join(__dirname, "workers", workerFileName);
+    return path.join(__dirname, "..", "dist", "workers", `${workerFileName}.js`);
   } else {
     // In development, use the TypeScript files directly from the 'src' folder
-    return path.join(__dirname, "..", "src", "workers", `${workerFileName}.ts`);
+    return path.join(__dirname, "..", "dist", "workers", `${workerFileName}.js`);
   }
 }
 
-// import redis from "./config/redis";
-// import axios from 'axios';
-// import "./queues"
-// import "./workers";
-// import "./schedules"
+function generateDaysForYear(year: number): string[] {
+  const isoStrings: string[] = [];
+  let currentDate = DateTime.local(year, 1, 1);
 
-// function generateDaysForYear(year: number): EpochTimeStamp[] {
-//   const isoStrings: EpochTimeStamp[] = [];
-//   let currentDate = DateTime.local(year, 1, 1);
+  while (currentDate.year === year) {
+    if (currentDate.isValid) {
+      isoStrings.push(currentDate.toISODate()); // Get the ISO date string
+      currentDate = currentDate.plus({ days: 1 }); // Increment to the next day
+    }
+  }
 
-//   while (currentDate.year === year) {
-//     if (currentDate.isValid) {
-//       isoStrings.push(currentDate.toUnixInteger()); // Get the ISO date string
-//       currentDate = currentDate.plus({ days: 1 }); // Increment to the next day
-//     }
-//   }
+  return isoStrings;
+}
 
-//   return isoStrings;
-// }
+const migrateOldData = async () => {
+  const sceneIds: string[] = await getAllSceneIds();
+  console.log(`Found ${sceneIds.length} Scene IDs`);
+
+  generateDaysForYear(2024).forEach(async (date) => {
+    if (sceneIds.length < 1) {
+      return {
+        success: false,
+        message: `No scene IDs found`,
+      };
+    }
+
+    const startDate = DateTime.fromFormat(date, "yyyy-MM-dd").startOf("day").toUTC().toUnixInteger(),
+      endDate = DateTime.fromFormat(date, "yyyy-MM-dd").endOf("day").toUTC().toUnixInteger();
+    let allAggregates;
+
+    if (!sceneIds?.length) {
+      return {
+        success: false,
+        message: `No scene IDs found to aggregate data for ${DateTime.now().minus({ days: 1 }).toUTC().toISODate()}`,
+      };
+    }
+
+    await Promise.all([
+      sceneIds.forEach(async (sceneId) => {
+        const analyticsActions = await getAnalyticsActionsForScene({ sceneId, startDate, endDate });
+
+        if (analyticsActions.length > 0) {
+          console.log(`Creating Aggregation Job for ${sceneId} ${date}`);
+          analytics.addJob(`Create Daily Analytics Aggregate`, { date });
+        } else {
+          console.log(`0 actions to aggregate for ${sceneId} ${date}`);
+        }
+      }),
+    ]);
+  });
+};
 
 async function setupBullArena() {
   const app = express();
@@ -116,51 +151,64 @@ const setupBullQueues = async () => {
 
   analyticsAggregationWorker.on("completed", async (job, result) => {
     if (!result || !result.message) return;
-    await notifications.addJob(`Send Notification - Aggregate Created`, result.message);
-    console.log(`Job completed with result ${JSON.stringify(result)}`);
+    // console.log(`Job completed with result ${JSON.stringify(result)}`);
+    // await notifications.addJob(`Send Notification - Aggregate Created`, result.message);
   });
 
   analyticsAggregationWorker.on("failed", async (job) => {
-    console.log(`Job failed with reason ${JSON.stringify(job.failedReason)}`);
+    console.log(`Analytics Job failed with reason ${JSON.stringify(job.failedReason)}`);
   });
 
   balanceCheckWorker.on("completed", async (job, result) => {
     if (!result || !result.message) return;
     await notifications.addJob(`Send Notification - Balance Check`, result);
-    console.log(`Job completed with result ${result}`);
+    console.log(`Job completed with result ${JSON.stringify(result)}`);
   });
 
   balanceCheckWorker.on("failed", async (job, result) => {
     await notifications.addJob(`Send Notification - Balance Check`, result);
-    console.log(`Job failed with reason ${job.failedReason}`);
+    console.log(`Balance Check Job failed with reason ${job.failedReason}`);
   });
 
   claimWorker.on("completed", async (job, result) => {
     if (!result || !result.message) return;
     await notifications.addJob(`Send Notification - Claims Check`, result);
-    console.log(`Job completed with result ${job.returnvalue}`);
+    console.log(`Claim job completed. | Success: ${result.success} | Message: ${result.message}`);
+    if (result.updatedTransactions.length > 0) {
+      result.updatedTransactions.forEach(async (transaction: any) => {
+        console.log(`Updated Transaction: ${transaction}`);
+      });
+    }
+    if (result.transactionStates.length > 0) {
+      result.transactionStates.forEach(async (transaction: any) => {
+        console.log(`Transaction State: ${transaction}`);
+      });
+    }
   });
 
   claimWorker.on("failed", async (job, result) => {
     await notifications.addJob(`Send Notification - Claims Check`, result);
-    console.log(`Job failed with reason ${job.failedReason}`);
+    console.log(`Claim Job failed with reason ${job.failedReason}`);
   });
 
   transactionWorker.on("completed", async (job, result) => {
     if (!result || !result.message) return;
+    console.log(`Job completed with result ${JSON.stringify(result)}`);
     await notifications.addJob(`Send Notification - Transaction Updater`, result);
   });
 
   transactionWorker.on("failed", async (job, result) => {
     if (!result || !result.message) return;
-
+    console.log(`Transaction Job failed with reason ${job.failedReason}`);
     await notifications.addJob(`Send Notification - Transaction Updater`, result);
   });
 
-  notificationWorker.on("completed", async (job) => {});
+  notificationWorker.on("completed", async (job, result) => {
+    if (!result || !result.message) return;
+  });
 
   notificationWorker.on("failed", async (job) => {
-    console.log(`Job failed with reason ${job.failedReason}`);
+    console.log(`Notification Job failed with reason ${job.failedReason}`);
   });
 
   process.on("SIGTERM", async () => {
@@ -178,3 +226,4 @@ const setupBullQueues = async () => {
 
 setupBullQueues();
 setupBullArena();
+// migrateOldData();

@@ -32,7 +32,6 @@ export namespace Analytics {
     startDateTime: EpochTimeStamp = DateTime.now().minus({ days: 1 }).startOf("day").toUnixInteger();
     endDateTime: EpochTimeStamp = DateTime.now().minus({ days: 1 }).endOf("day").toUnixInteger();
     actionCounts: ActionAggregate = {};
-    actionNames: string[] = [];
     scale?: AggregateScale = AggregateScale.MINUTE;
     ts?: EpochTimeStamp = DateTime.now().toUnixInteger();
 
@@ -42,15 +41,25 @@ export namespace Analytics {
       this.startDateTime = config.startDateTime || this.startDateTime;
       this.endDateTime = config.endDateTime || this.endDateTime;
       this.actionCounts = config.actionCounts || this.actionCounts;
-      this.actionNames = config.actionNames || this.actionNames;
       this.scale = config.scale || this.scale;
       this.ts = config.ts || this.ts;
     }
   }
 
-  export type ActionAggregate = {
-    [isoDateTime: string]: { [count: string]: number };
-  };
+  export interface ActionAggregate {
+    [actionName: string]: ActionTimeline;
+  }
+
+  export interface ActionTimeline {
+    [timestamp: string]: number;
+  }
+
+  export interface AggregateQuery {
+    sceneId: string;
+    analyticsActions: Analytics.Action[];
+    startDate: EpochTimeStamp;
+    endDate: EpochTimeStamp;
+  }
 
   export enum AggregateScale {
     MINUTE = "minute",

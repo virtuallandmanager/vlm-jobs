@@ -36,7 +36,6 @@ export const getIncompleteClaims = async (): Promise<Giveaway.Claim[]> => {
 
   try {
     const data = await largeQuery(params);
-    console.log("data:", data);
     if (!data.length) {
       return [];
     }
@@ -65,7 +64,6 @@ export const getInsufficientCreditClaims = async (): Promise<Giveaway.Claim[]> =
 
   try {
     const data = await largeQuery(params);
-    console.log("data:", data);
     if (!data.length) {
       return [];
     }
@@ -118,7 +116,7 @@ export const getGiveawayById = async (giveawayId: string): Promise<Giveaway.Conf
 
 export const getGiveawayClaimById = async (sk: string): Promise<Giveaway.Claim> => {
   const params: DynamoDB.DocumentClient.GetItemInput = {
-    TableName: mainTable,
+    TableName: claimsTable,
     Key: {
       pk: Giveaway.Claim.pk,
       sk,
@@ -218,6 +216,7 @@ export const sendWearables = async (groupedItemIds: { [contractAddress: string]:
       })
     );
   } catch (error) {
+    console.error("Error sending wearables", error);
     throw error;
   }
 };
@@ -261,9 +260,10 @@ export const mintNewWearables = async (nftContract: ethers.Contract, itemIds: st
   const walletArray = Array(itemIds.length).fill(to);
   try {
     const transaction: ContractTransaction = await nftContract.issueTokens(walletArray, itemIds, options);
+    transaction.wait();
     return { success: true, transaction, status: Giveaway.ClaimStatus.IN_PROGRESS };
   } catch (error: any) {
-    console.log(error);
+    console.log('error from mintNewWearables', error);
     if (error.code === "UNPREDICTABLE_GAS_LIMIT" || error.reason === "execution reverted: _issueToken: ITEM_EXHAUSTED") {
       return { success: false, transaction: error, status: Giveaway.ClaimStatus.FAILED };
     }
@@ -315,9 +315,10 @@ export const increaseClaimCountOfGiveaway = async (giveawayId: string, claimCoun
       pk: Giveaway.Config.pk,
       sk: giveawayId,
     },
-    UpdateExpression: "ADD #claims :claimCount, ADD #allocatedCredits :claimCount",
+    UpdateExpression: "ADD #claims :claimCount, #allocatedCredits :claimCount",
     ExpressionAttributeNames: {
       "#claims": "claimCount",
+      "#allocatedCredits": "allocatedCredits",
     },
     ExpressionAttributeValues: {
       ":claimCount": -claimCount,
@@ -328,7 +329,7 @@ export const increaseClaimCountOfGiveaway = async (giveawayId: string, claimCoun
     await docClient.update(params).promise();
     return { success: true };
   } catch (err) {
-    console.error("Error updating DynamoDB", err);
+    console.error("Error updating DynamoDB - increaseClaimCountOfGiveaway", err);
     throw err;
   }
 };
@@ -354,7 +355,7 @@ export const decreaseCreditAllocationOfGiveaway = async (allocationId: string) =
     await docClient.update(params).promise();
     return { success: true };
   } catch (err) {
-    console.error("Error updating DynamoDB", err);
+    console.error("Error updating DynamoDB - decreaseCreditAllocationOfGiveaway", err);
     throw err;
   }
 };
@@ -380,7 +381,7 @@ export const updateClaimStatus = async (claim: Giveaway.Claim) => {
     await docClient.update(params).promise();
     return { success: true };
   } catch (err) {
-    console.error("Error updating DynamoDB", err);
+    console.error("Error updating DynamoDB - updateClaimStatus", err);
     throw err;
   }
 };
@@ -400,6 +401,7 @@ export const getGasLimits = async (sk: string) => {
     const record = Item as Accounting.TxLimits;
     return record.limits || { gas_price: { unit: "gwei", value: 0 }, gas_limit: { unit: "wei", value: 0 } };
   } catch (err) {
+    console.error("Error getting gas limits from DynamoDB", err);
     throw err;
   }
 };
@@ -416,12 +418,12 @@ export const deductAirdropBalance = async (giveawayId: string, claimsCount: numb
       pk: Giveaway.Config.pk,
       sk: giveawayId,
     },
-    UpdateExpression: "SUBTRACT #claims :number",
+    UpdateExpression: "ADD #claims :number",
     ExpressionAttributeNames: {
       "#claims": "allocated",
     },
     ExpressionAttributeValues: {
-      ":claims": claimsCount,
+      ":claims": -claimsCount,
     },
   };
 
@@ -429,7 +431,7 @@ export const deductAirdropBalance = async (giveawayId: string, claimsCount: numb
     await docClient.update(params).promise();
     return { success: true };
   } catch (err) {
-    console.error("Error updating DynamoDB", err);
+    console.error("Error updating DynamoDB - deductAirdropBalance", err);
     throw err;
   }
 };

@@ -56,10 +56,15 @@ export const largeQuery: CallableFunction = async (params: DocumentClient.QueryI
     allData = [];
   }
 
-  if (options.cache) {
-    var data = await docClient.query(params).promise();
-  } else {
-    var data = await docClient.query(params).promise();
+  try {
+    if (options.cache) {
+      var data = await docClient.query(params).promise();
+    } else {
+      var data = await docClient.query(params).promise();
+    }
+  } catch (err) {
+    console.error("Error querying DynamoDB", err);
+    throw err;
   }
 
   if (data && data.Items && data.Items.length > 0) {

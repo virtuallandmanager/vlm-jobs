@@ -28,111 +28,112 @@ export const getAllSceneIds = async (): Promise<string[]> => {
 };
 
 export const getAnalyticsActionsForScene = async (query: { sceneId: string; startDate: EpochTimeStamp; endDate: EpochTimeStamp }) => {
-  const { sceneId, startDate, endDate } = query;
-  const params: DynamoDB.DocumentClient.QueryInput = {
-    TableName: analyticsTable,
-    IndexName: "sceneId-index",
-    KeyConditionExpression: "pk = :analyticsAggregatePk and sceneId = :sceneId",
-    FilterExpression: "#timestamp BETWEEN :startDate AND :endDate",
-    ExpressionAttributeNames: {
-      "#timestamp": "ts",
-    },
-    ExpressionAttributeValues: {
-      ":analyticsAggregatePk": "vlm:analytics:session:action",
-      ":sceneId": sceneId,
-      ":startDate": startDate,
-      ":endDate": endDate,
-    },
-  };
-  const result = await docClient.query(params).promise();
+  try {
+    const { sceneId, startDate, endDate } = query;
+    const params: DynamoDB.DocumentClient.QueryInput = {
+      TableName: analyticsTable,
+      IndexName: "sceneId-index",
+      KeyConditionExpression: "pk = :analyticsActionPk and sceneId = :sceneId",
+      FilterExpression: "#timestamp BETWEEN :startDate AND :endDate",
+      ExpressionAttributeNames: {
+        "#timestamp": "ts",
+      },
+      ExpressionAttributeValues: {
+        ":analyticsActionPk": "vlm:analytics:session:action",
+        ":sceneId": sceneId,
+        ":startDate": startDate,
+        ":endDate": endDate,
+      },
+    };
+    const result = await docClient.query(params).promise();
 
-  return result.Items as Analytics.Action[];
+    return result.Items as Analytics.Action[];
+  } catch (err) {
+    console.error("Error querying DynamoDB", err);
+    throw err;
+  }
 };
 
-export const createAnalyticsAggregates = async (query: { sceneId: string; analyticsActions: Analytics.Action[]; startDate: EpochTimeStamp; endDate: EpochTimeStamp }) => {
+export const createAnalyticsAggregates = async (query: Analytics.AggregateQuery) => {
   const { sceneId, analyticsActions, startDate, endDate } = query;
-  let byMinute = {},
-    byHour = {},
-    byDay = {},
-    actionNames = Array.from(new Set(analyticsActions.map((action) => action.name)));
 
-  // group each metric by the action property and count how many of each action took place during each minute
-  byMinute = analyticsActions.reduce((acc: any, metric: Analytics.Action) => {
+  const byMinute: Analytics.ActionAggregate = analyticsActions.reduce((acc: Analytics.ActionAggregate, metric) => {
     const { name, ts } = metric;
     const minute = DateTime.fromMillis(ts).startOf("minute").toISO();
     if (!minute) return acc;
-    if (!acc[minute]) {
-      acc[minute] = {};
+
+    if (!acc[name][minute]) {
+      acc[name][minute] = 1;
+    } else {
+      acc[name][minute]++;
     }
-    if (!acc[minute][name]) {
-      acc[minute][name] = 0;
-    }
-    acc[minute][name]++;
+
     return acc;
   }, {});
 
-  byHour = analyticsActions.reduce((acc: any, metric: Analytics.Action) => {
+  const byHour: Analytics.ActionAggregate = analyticsActions.reduce((acc: Analytics.ActionAggregate, metric) => {
     const { name, ts } = metric;
-    const hour = DateTime.fromMillis(ts).toUTC().startOf("hour").toISO();
+    const hour = DateTime.fromMillis(ts).startOf("hour").toISO();
     if (!hour) return acc;
-    if (!acc[hour]) {
-      acc[hour] = {};
+
+    if (!acc[name][hour]) {
+      acc[name][hour] = 1;
+    } else {
+      acc[name][hour]++;
     }
-    if (!acc[hour][name]) {
-      acc[hour][name] = 0;
-    }
-    acc[hour][name]++;
+
     return acc;
   }, {});
 
-  byDay = analyticsActions.reduce((acc: any, metric: Analytics.Action) => {
+  const byDay: Analytics.ActionAggregate = analyticsActions.reduce((acc: Analytics.ActionAggregate, metric) => {
     const { name, ts } = metric;
-    const day = DateTime.fromMillis(ts).toUTC().startOf("day").toISO();
+    const day = DateTime.fromMillis(ts).startOf("day").toISO();
     if (!day) return acc;
-    if (!acc[day]) {
-      acc[day] = {};
+
+    if (!acc[name][day]) {
+      acc[name][day] = 1;
+    } else {
+      acc[name][day]++;
     }
-    if (!acc[day][name]) {
-      acc[day][name] = 0;
-    }
-    acc[day][name]++;
+
     return acc;
   }, {});
 
-  const minute = new Analytics.Aggregate({
+  const minuteAggregate = new Analytics.Aggregate({
     sceneId: sceneId,
     startDateTime: startDate,
     endDateTime: endDate,
     actionCounts: byMinute,
-    actionNames,
     scale: Analytics.AggregateScale.MINUTE,
   });
 
-  const hour = new Analytics.Aggregate({
+  console.log(minuteAggregate);
+
+  const hourAggregate = new Analytics.Aggregate({
     sceneId: sceneId,
     startDateTime: startDate,
     endDateTime: endDate,
     actionCounts: byHour,
-    actionNames,
     scale: Analytics.AggregateScale.HOUR,
   });
 
-  const day = new Analytics.Aggregate({
+  const dayAggregate = new Analytics.Aggregate({
     sceneId: sceneId,
     startDateTime: startDate,
     endDateTime: endDate,
     actionCounts: byDay,
-    actionNames,
     scale: Analytics.AggregateScale.DAY,
   });
 
-  return { minute, hour, day };
+  console.log(`{ minute: ${minuteAggregate}, hour: ${hourAggregate}, day: ${dayAggregate} }`);
+
+  return { minute: minuteAggregate, hour: hourAggregate, day: dayAggregate };
 };
 
 export const pushAnalyticsAggregatesToDynamoDB = async (aggregates: Analytics.Aggregate[]) => {
   const params: DynamoDB.DocumentClient.BatchWriteItemInput = {
     RequestItems: {
-      vlm_analytics: aggregates.map((aggregate) => {
+      [analyticsTable]: aggregates.map((aggregate) => {
         return {
           PutRequest: {
             Item: aggregate,
@@ -170,12 +171,12 @@ export const setTTLForActions = async function (query: { analyticsActions: Analy
     for (const chunk of actionChunks) {
       const params: DynamoDB.DocumentClient.BatchWriteItemInput = {
         RequestItems: {
-          vlm_analytics: chunk.map((action) => ({
+          [analyticsTable]: chunk.map((action) => ({
             PutRequest: {
               Item: {
                 ...action,
                 aggregated: true,
-                ttl: DateTime.now().plus({ days: 30 }).toUnixInteger(),
+                ttl: DateTime.now().plus({ days: 7 }).toUnixInteger(),
               },
             },
           })),
