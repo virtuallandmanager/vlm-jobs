@@ -1,6 +1,7 @@
 version: "3"
 services:
   vlm-redis:
+    restart: always
     container_name: vlm-redis
     image: redis
     ports:
@@ -8,6 +9,7 @@ services:
 
   vlm-jobs:
     container_name: vlm-jobs
+    restart: always
     build:
       context: ./
       dockerfile: Dockerfile
