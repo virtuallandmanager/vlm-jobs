@@ -15,7 +15,7 @@ export namespace Giveaway {
     claimCount?: number = 0;
     eventId?: string;
     paused?: boolean;
-    items?: Array<string> = [];
+    items?: Array<string | Item> = [];
     allocatedCredits?: number = 0;
     createdAt?: number = DateTime.now().toUnixInteger();
     ts?: EpochTimeStamp = DateTime.now().toUnixInteger();
@@ -35,6 +35,16 @@ export namespace Giveaway {
       this.items = config?.items || this.items;
       this.createdAt = config?.createdAt;
       this.ts = config?.ts;
+
+      if (config?.items && config.items.length) {
+        this.items = config.items.map((item) => {
+          if (typeof item === "string") {
+            return item;
+          } else {
+            return new Item(item);
+          }
+        });
+      }
     }
   }
 

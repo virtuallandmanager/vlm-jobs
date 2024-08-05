@@ -7,7 +7,7 @@ import { Event } from "../models/Event.model";
 import { ContractTransaction, ethers } from "ethers";
 import dclNft from "../abis/dclNft";
 import { Accounting } from "../models/Accounting.model";
-import { gasLimits } from "../workers/Claim.worker";
+import { gasLimits, job } from "../workers/Claim.worker";
 
 const signer = process.env.GIVEAWAY_WALLET_A_PVT as string;
 if (!signer) {
@@ -41,7 +41,7 @@ export const getIncompleteClaims = async (): Promise<Giveaway.Claim[]> => {
     }
     return data as Giveaway.Claim[];
   } catch (err) {
-    console.error("Error querying DynamoDB", err);
+    console.error("Error querying DynamoDB - getIncompleteClaims", err);
     throw err;
   }
 };
@@ -69,7 +69,7 @@ export const getInsufficientCreditClaims = async (): Promise<Giveaway.Claim[]> =
     }
     return data as Giveaway.Claim[];
   } catch (err) {
-    console.error("Error querying DynamoDB", err);
+    console.error("Error querying DynamoDB - getInsufficientCreditClaims", err);
     throw err;
   }
 };
@@ -89,7 +89,7 @@ export const getEventById = async (eventId: string): Promise<Event.Config> => {
 
     return data.Item as Event.Config;
   } catch (err) {
-    console.error("Error querying DynamoDB", err);
+    console.error("Error querying DynamoDB - getEventById", err);
     throw err;
   }
 };
@@ -109,7 +109,7 @@ export const getGiveawayById = async (giveawayId: string): Promise<Giveaway.Conf
 
     return data.Item as Giveaway.Config;
   } catch (err) {
-    console.error("Error querying DynamoDB", err);
+    console.error("Error querying DynamoDB - getGiveawayById", err);
     throw err;
   }
 };
@@ -128,26 +128,26 @@ export const getGiveawayClaimById = async (sk: string): Promise<Giveaway.Claim> 
 
     return data.Item as Giveaway.Claim;
   } catch (err) {
-    console.error("Error querying DynamoDB", err);
+    console.error("Error querying DynamoDB - getGiveawayClaimById", err, sk);
     throw err;
   }
 };
 
 export const getGiveawayItemById = async (itemId: string): Promise<Giveaway.Item> => {
-  const params: DynamoDB.DocumentClient.GetItemInput = {
-    TableName: mainTable,
-    Key: {
-      pk: Giveaway.Item.pk,
-      sk: itemId,
-    },
-  };
-
   try {
+    const params: DynamoDB.DocumentClient.GetItemInput = {
+      TableName: mainTable,
+      Key: {
+        pk: Giveaway.Item.pk,
+        sk: itemId,
+      },
+    };
+
     const data = await docClient.get(params).promise();
 
     return data.Item as Giveaway.Item;
   } catch (err) {
-    console.error("Error querying DynamoDB", err);
+    console.error("Error querying DynamoDB - getGiveawayItemById", err, itemId);
     throw err;
   }
 };
@@ -157,7 +157,7 @@ export const getGiveawayItems = async (itemIds: string[]): Promise<Giveaway.Item
     if (!itemIds?.length) return [];
     return await Promise.all(itemIds.map(async (itemId) => await getGiveawayItemById(itemId)));
   } catch (err) {
-    console.error("Error querying DynamoDB", err);
+    console.error("Error querying DynamoDB - getGiveawayItems", err);
     throw err;
   }
 };
@@ -165,9 +165,11 @@ export const getGiveawayItems = async (itemIds: string[]): Promise<Giveaway.Item
 export const findItemsWithSharedContract = (items: Giveaway.Item[]): { [contractAddress: string]: string[] } => {
   // group each item in 'items' by the contractAddress property
   const groupedClaimItems = items.reduce((acc: any, item: Giveaway.Item) => {
-    console.log("Processing item:", item); // Add logging
+    if (!item) {
+      return acc;
+    }
 
-    if (!acc[item.contractAddress]) {
+    if (!acc[item?.contractAddress]) {
       acc[item.contractAddress] = [];
     }
     acc[item.contractAddress].push(item);
@@ -184,24 +186,39 @@ export const findItemsWithSharedContract = (items: Giveaway.Item[]): { [contract
 };
 
 // Send Wearables For One Claim
-export const sendWearables = async (groupedItemIds: { [contractAddress: string]: string[] }, claim: Giveaway.Claim): Promise<{ success: boolean; transaction: ContractTransaction; error?: any }[]> => {
+export const sendWearables = async (
+  groupedItemIds: { [contractAddress: string]: string[] },
+  claim: Giveaway.Claim
+): Promise<{ success: boolean; transaction: ContractTransaction | unknown; error?: any }[]> => {
   try {
-    const blockchainTxIds = [];
-    return await Promise.all(
-      Object.keys(groupedItemIds).map(async (contractAddress) => {
+    const nonce = (await ethersWallet.getTransactionCount("latest"));
+    job.log(`Got nonce ${nonce}`);
+    console.log("Got nonce", nonce);
+    console.log("Sending wearables", groupedItemIds);
+    const transactions: { success: boolean; transaction: ContractTransaction | unknown; error?: any }[] = [];
+    return await new Promise(async (resolve) => {
+      for (let i = 0; i < Object.keys(groupedItemIds).length; i++) {
+        const contractAddress = Object.keys(groupedItemIds)[i];
+
+        job.log(`Sending wearables - grouped ids: ${groupedItemIds}`);
+        job.log(`Sending wearables for contract ${contractAddress}`);
         const nftContract = new ethers.Contract(contractAddress, dclNft, ethersWallet);
         try {
-          const estimateGasOptionsResponse = await estimateGasOptions(nftContract, groupedItemIds[contractAddress], claim.to);
+          const estimateGasOptionsResponse = await estimateGasOptions(nftContract, groupedItemIds[contractAddress], claim.to, nonce + i);
           if (!estimateGasOptionsResponse.success || !estimateGasOptionsResponse.options) {
             throw Error(JSON.stringify(estimateGasOptionsResponse));
           }
           await new Promise((resolve) => setTimeout(resolve, 1000));
           const { options } = estimateGasOptionsResponse;
+
+          options.nonce = nonce + i;
+
           const mintTransaction = await mintNewWearables(nftContract, groupedItemIds[contractAddress], claim.to, options);
+          console.log("Minted transaction", mintTransaction.transaction.hash);
           if (claim.status !== mintTransaction.status) {
             await updateClaimStatus({ ...claim, status: mintTransaction.status });
           }
-          return mintTransaction;
+          transactions.push(mintTransaction);
         } catch (error: any) {
           const mintedOut = error.code === "UNPREDICTABLE_GAS_LIMIT" && error.reason === "execution reverted: _issueToken: ITEM_EXHAUSTED";
           if (mintedOut && groupedItemIds.length) {
@@ -211,10 +228,11 @@ export const sendWearables = async (groupedItemIds: { [contractAddress: string]:
             claim.status = Giveaway.ClaimStatus.FAILED;
             await updateClaimStatus(claim);
           }
-          return { success: false, transaction: error };
+          transactions.push({ success: false, transaction: {}, error });
         }
-      })
-    );
+      }
+      resolve(transactions);
+    });
   } catch (error) {
     console.error("Error sending wearables", error);
     throw error;
@@ -222,10 +240,10 @@ export const sendWearables = async (groupedItemIds: { [contractAddress: string]:
 };
 
 // Send One Or More Wearables Within The Same Contract
-export const estimateGasOptions = async (nftContract: ethers.Contract, itemIds: string[], to: string) => {
+export const estimateGasOptions = async (nftContract: ethers.Contract, itemIds: string[], to: string, nonce: number) => {
   const walletArray = Array(itemIds.length).fill(to);
   try {
-    const limits = gasLimits;
+    const limits = await getGasLimits("ETH:137");
     const maxGasPriceUnit = limits?.gas_price ? limits?.gas_price?.unit : "gwei";
     const maxGasPrice = limits?.gas_price ? limits.gas_price.value : 3000;
     const maxGasLimitUnit = limits?.gas_limit ? limits.gas_limit.unit : "gwei";
@@ -236,11 +254,11 @@ export const estimateGasOptions = async (nftContract: ethers.Contract, itemIds: 
     const estimatedGasPrice = await provider.getGasPrice();
     const estimatedGasLimit = await nftContract.estimateGas.issueTokens(walletArray, itemIds);
     const gasPrice = estimatedGasPrice && Number(ethers.utils.formatUnits(estimatedGasPrice, "wei")) + gasBuffer;
-    const gasLimit = estimatedGasLimit && Number(ethers.utils.formatUnits(estimatedGasLimit, "wei"));
+    const gasLimit = estimatedGasLimit && Number(ethers.utils.formatUnits(estimatedGasLimit, "wei")) * itemIds.length;
     const convertedGasPrice = estimatedGasPrice && Number(ethers.utils.formatUnits(estimatedGasPrice, maxGasPriceUnit));
-    const convertedGasLimit = estimatedGasLimit && Number(ethers.utils.formatUnits(estimatedGasLimit, maxGasLimitUnit));
+    const convertedGasLimit = estimatedGasLimit && Number(ethers.utils.formatUnits(estimatedGasLimit, maxGasLimitUnit)) * itemIds.length;
 
-    const options = { gasPrice, gasLimit };
+    const options = { gasPrice, gasLimit, nonce };
     console.log("Gas options:", options);
 
     if (convertedGasPrice > maxGasPrice || convertedGasLimit > maxGasPrice * itemIds.length || convertedGasLimit > maxGasLimit) {
@@ -260,14 +278,14 @@ export const mintNewWearables = async (nftContract: ethers.Contract, itemIds: st
   const walletArray = Array(itemIds.length).fill(to);
   try {
     const transaction: ContractTransaction = await nftContract.issueTokens(walletArray, itemIds, options);
-    transaction.wait();
+    // transaction.wait();
     return { success: true, transaction, status: Giveaway.ClaimStatus.IN_PROGRESS };
   } catch (error: any) {
-    console.log('error from mintNewWearables', error);
+    console.log("error from mintNewWearables", error.message);
     if (error.code === "UNPREDICTABLE_GAS_LIMIT" || error.reason === "execution reverted: _issueToken: ITEM_EXHAUSTED") {
       return { success: false, transaction: error, status: Giveaway.ClaimStatus.FAILED };
     }
-    throw { success: false, transaction: error };
+    throw { success: false, transaction: error, status: Giveaway.ClaimStatus.FAILED };
   }
 };
 

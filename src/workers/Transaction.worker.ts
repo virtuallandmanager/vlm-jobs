@@ -12,11 +12,11 @@ const worker = async (job: Job) => {
   const updatedTransactions = [];
   await job.log(`Found ${pendingTransactions.length} Pending Transactions`);
   for (const transaction of pendingTransactions) {
-    await job.log(`Checking Transaction ${transaction.sk} - ${transaction.txType} - ${transaction.status} - ${transaction.blockchainTxIds.length} Blockchain Transactions`);
-    if (transaction.blockchainTxIds.length === 0) return;
+    await job.log(`Checking Transaction ${transaction.sk} - ${transaction.txType} - ${transaction.status} - ${transaction.blockchainTxIds?.length || "No"} Blockchain Transactions`);
+    if (!transaction.blockchainTxIds || transaction.blockchainTxIds?.length === 0) continue;
 
     const statuses = await Promise.all(
-      transaction.blockchainTxIds.map(async (txId: string) => {
+      transaction.blockchainTxIds?.map(async (txId: string) => {
         await job.log(`Getting Transaction Status for ${txId}`);
         const status = await getBlockchainTransactionStatus(txId);
         await job.log(`Transaction Status for ${txId} is ${status}`);

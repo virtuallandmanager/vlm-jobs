@@ -9,7 +9,7 @@ export const transactionsTable = process.env.NODE_ENV === "development" ? "vlm_t
 
 export let docClient: AWS.DynamoDB.DocumentClient;
 
-if (process.env.NODE_ENV === "development") {
+if ( true) {
   AWS.config.update({
     accessKeyId: process.env.AWS_ACCESS_KEY,
     secretAccessKey: process.env.AWS_SECRET_KEY,
@@ -46,7 +46,7 @@ export const query = async (job: Job) => {
     console.log("Query results:", data.Items);
     return data.Items;
   } catch (err) {
-    console.error("Error querying DynamoDB", err);
+    console.error("Error querying DynamoDB - query", err);
     throw err;
   }
 };
@@ -63,7 +63,7 @@ export const largeQuery: CallableFunction = async (params: DocumentClient.QueryI
       var data = await docClient.query(params).promise();
     }
   } catch (err) {
-    console.error("Error querying DynamoDB", err);
+    console.error("Error querying DynamoDB - largeQuery", err);
     throw err;
   }
 

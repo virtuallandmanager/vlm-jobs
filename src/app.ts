@@ -181,7 +181,7 @@ const setupBullQueues = async () => {
     }
     if (result.transactionStates.length > 0) {
       result.transactionStates.forEach(async (transaction: any) => {
-        console.log(`Transaction State: ${transaction}`);
+        console.log(`Transaction State: ${JSON.stringify(transaction)}`);
       });
     }
   });
