@@ -10,10 +10,16 @@ import {
   updateClaimStatus,
   increaseClaimCountOfGiveaway,
   getEventById,
+  checkIfGasLimited,
+  ethersWallet,
+  NonceManager,
+  updateUserGiveawayTransactionList,
+  decreaseCreditAllocationOfGiveaway,
+  getCreditAllocationByGiveawayId,
 } from "../services/Claim.service";
 import { Giveaway } from "../models/Giveaway.model";
 import { addBlockchainTransactionIds } from "../services/Transaction.service";
-import { ContractReceipt, ContractTransaction } from "ethers";
+import { ContractTransaction } from "ethers";
 import { Accounting } from "../models/Accounting.model";
 
 export let gasLimits: { [key in Accounting.TxLimitsType]?: { unit: string; value: number } } = {};
@@ -25,7 +31,9 @@ const worker = async (newJob: Job) => {
   job = newJob;
   if (job.data.type == "processPendingClaims") {
     const incompleteClaims = await getIncompleteClaims();
-    incompleteClaims.length = 1;
+    if (incompleteClaims.length > 30) {
+      incompleteClaims.length = 30;
+    }
     return await processPendingClaims(incompleteClaims);
   } else if (job.data.type === "rejuvenateClaims") {
     const insufficientCreditClaims = await getInsufficientCreditClaims();
@@ -42,13 +50,14 @@ const rejuvenateClaims = async (claims: Giveaway.Claim[]) => {
     };
   } else {
     await Promise.all([
-      claims.forEach(async (claim) => {
+      claims.map(async (claim) => {
         const event = await getEventById(claim.eventId);
         if ((event?.eventStart && event?.eventStart > Date.now()) || (event?.eventEnd && event.eventEnd < Date.now())) return { success: false };
         const giveaway = await getGiveawayById(claim.giveawayId);
         if (!giveaway?.allocatedCredits) return { success: false };
         claim.status = Giveaway.ClaimStatus.PENDING;
         await updateClaimStatus(claim);
+        return claim;
       }),
     ]);
   }
@@ -60,73 +69,97 @@ const rejuvenateClaims = async (claims: Giveaway.Claim[]) => {
 
 const processPendingClaims = async (claims: Giveaway.Claim[]) => {
   job.log(`Processing ${claims.length} Claims`);
-  job.log(`Getting Gas Limits`);
-  gasLimits = await getGasLimits("ETH:137");
-  job.log(`Got Gas Limits: ${JSON.stringify(gasLimits)}`);
+  const response = await checkIfGasLimited();
+  if (response.gasLimited) {
+    job.log("Gas price too high. Skipping Claims");
+    return {
+      success: false,
+      error: true,
+      message: `Gas price too high. Currently ${response.gasPrice} gwei. Skipping Claims.`,
+    };
+  }
   if (!claims?.length) {
     // no incomplete claims found
     return {
       success: false,
     };
   } else {
-    await Promise.all([
-      claims.forEach(async (claim) => {
-        if (!claim) return;
-        if (claim.status === Giveaway.ClaimStatus.PENDING) {
-          claim.status = Giveaway.ClaimStatus.IN_PROGRESS;
-          await updateClaimStatus(claim);
-          await job.log(`Updated Claim ${claim.sk} to In Progress`);
-        }
-      }),
-    ]);
+    for (const claim of claims) {
+      if (claim?.status === Giveaway.ClaimStatus.PENDING) {
+        claim.status = Giveaway.ClaimStatus.IN_PROGRESS;
+        await updateClaimStatus(claim);
+        await job.log(`Updated Claim ${claim.sk} to In Progress`);
+      }
+    }
   }
 
-  const transactionStates = await Promise.all(
-    claims.map(
-      async (claim: Giveaway.Claim): Promise<{ success: boolean; transactions: Array<ContractTransaction | any>; claim: Giveaway.Claim } | undefined> => {
-        try {
-          await job.log(`Processing Claim ${claim.sk}`);
-          const giveaway = await getGiveawayById(claim.giveawayId);
-          if (!giveaway?.items) return { success: false, transactions: [], claim };
-          if (!giveaway?.allocatedCredits) {
-            claim.status = Giveaway.ClaimStatus.INSUFFICIENT_CREDIT;
-            await updateClaimStatus(claim);
-            return { success: false, transactions: [], claim };
-          }
+  const initialNonce = await ethersWallet.getTransactionCount("latest");
+  const nonceManager = new NonceManager(initialNonce);
+  const transactionStates = [];
 
-          job.log(`Getting Items for Giveaway ${giveaway.sk}`);
-          const itemIds: string[] = giveaway.items.map((item) => (typeof item == "string" ? item : String(item.sk)));
-          const itemsForGiveaway = await getGiveawayItems(itemIds);
-          if (!itemsForGiveaway) {
-            job.log(`No Items found for Giveaway ${giveaway.sk}`);
-            return { success: false, transactions: [], claim };
-          }
-          job.log(`Got Items for Giveaway ${giveaway.sk}`);
-          job.log(`Finding Items with Shared Contract`);
-          const groupedClaimItems = findItemsWithSharedContract(itemsForGiveaway);
-          job.log(`Found Items with Shared Contract`);
-          const transactionResponses = await sendWearables(groupedClaimItems, claim);
-          job.log(`Sent Wearables for Claim ${claim.sk} - ${transactionResponses}`);
-          job.log(`${transactionResponses}`);
-          const successfulResponses: { success: boolean; transaction: ContractTransaction | any }[] = transactionResponses.filter((response) => response?.success && response?.transaction);
-          await increaseClaimCountOfGiveaway(claim.giveawayId, successfulResponses.length);
-          job.log(`Increased Claim Count for Giveaway ${claim.giveawayId}`);
-          const transactions = successfulResponses.map((response) => response.transaction);
-          job.log(`Finished processing Claim ${claim.sk}`);
-          return { success: true, transactions, claim };
-        } catch (error) {
-          job.log(`Error processing Claim`);
-          job.log(`${error}`);
-          console.error("Error processing claim", error);
-          return {
-            success: false,
-            transactions: [],
-            claim,
-          };
-        }
+  for (const claim of claims) {
+    if (!claim?.sk) {
+      continue;
+    }
+    try {
+      await job.log(`Processing Claim ${claim.sk}`);
+      const giveaway = await getGiveawayById(claim.giveawayId);
+      if (!giveaway?.items) {
+        transactionStates.push({ success: false, transactions: [], claim });
+        continue;
       }
-    )
-  );
+      if (!giveaway?.allocatedCredits) {
+        claim.status = Giveaway.ClaimStatus.INSUFFICIENT_CREDIT;
+        await updateClaimStatus(claim);
+        transactionStates.push({ success: false, transactions: [], claim });
+        continue;
+      }
+
+      job.log(`Getting Items for Giveaway ${giveaway.sk}`);
+      const itemIds: string[] = giveaway.items.map((item) => (typeof item == "string" ? item : String(item.sk)));
+      const itemsForGiveaway = await getGiveawayItems(itemIds);
+      if (!itemsForGiveaway) {
+        job.log(`No Items found for Giveaway ${giveaway.sk}`);
+        transactionStates.push({ success: false, transactions: [], claim });
+        continue;
+      }
+      job.log(`Got Items for Giveaway ${giveaway.sk}`);
+      job.log(`Finding Items with Shared Contract`);
+      const groupedClaimItems = findItemsWithSharedContract(itemsForGiveaway);
+      job.log(`Found Items with Shared Contract`);
+
+      const transactionResponses = await sendWearables(groupedClaimItems, claim, nonceManager);
+      job.log(`Sent Wearables for Claim ${claim.sk} - ${transactionResponses}`);
+      job.log(`${transactionResponses}`);
+      const successfulResponses: { success: boolean; transaction: ContractTransaction | any }[] = transactionResponses.filter((response) => response?.success && response?.transaction);
+      await Promise.all(
+        successfulResponses.map(async (response) => {
+          await updateUserGiveawayTransactionList(claim.giveawayId, claim.userId, [response.transaction.hash]);
+
+          job.log(`Transaction Hash: ${response.transaction.hash}`);
+        })
+      );
+      await increaseClaimCountOfGiveaway(claim.giveawayId, successfulResponses.length);
+      job.log(`Increased Claim Count for Giveaway ${claim.giveawayId}`);
+      const allocation = await getCreditAllocationByGiveawayId(claim.giveawayId);
+      if (allocation && allocation?.sk) {
+        await decreaseCreditAllocationOfGiveaway(allocation.sk, successfulResponses.length);
+      }
+      job.log(`Decreased Credit Allocation for Giveaway ${claim.giveawayId}`);
+      const transactions = successfulResponses.map((response) => response.transaction);
+      job.log(`Finished processing Claim ${claim.sk}`);
+      transactionStates.push({ success: true, transactions, claim });
+    } catch (error) {
+      job.log(`Error processing Claim`);
+      job.log(`${error}`);
+      console.error("Error processing claim", error);
+      transactionStates.push({
+        success: false,
+        transactions: [],
+        claim,
+      });
+    }
+  }
 
   const updatedTransactions = await Promise.all(
     transactionStates.map(async (transactionState) => {

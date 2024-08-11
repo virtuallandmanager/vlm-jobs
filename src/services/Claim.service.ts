@@ -1,13 +1,13 @@
 // Get a list of new claims
-
+import { v4 as uuidv4 } from "uuid";
 import { DynamoDB } from "aws-sdk";
-import { claimsTable, docClient, largeQuery, mainTable } from "./Database.service";
+import { claimsTable, docClient, largeQuery, mainTable, transactionsTable } from "./Database.service";
 import { Giveaway } from "../models/Giveaway.model";
 import { Event } from "../models/Event.model";
 import { ContractTransaction, ethers } from "ethers";
 import dclNft from "../abis/dclNft";
 import { Accounting } from "../models/Accounting.model";
-import { gasLimits, job } from "../workers/Claim.worker";
+import { DateTime } from "luxon";
 
 const signer = process.env.GIVEAWAY_WALLET_A_PVT as string;
 if (!signer) {
@@ -16,7 +16,19 @@ if (!signer) {
 
 const provider = new ethers.providers.AlchemyProvider("matic", process.env.ALCHEMY_API_KEY_MATIC);
 
-const ethersWallet = new ethers.Wallet(signer, provider);
+export const ethersWallet = new ethers.Wallet(signer, provider);
+
+export class NonceManager {
+  private nonce: number;
+
+  constructor(initialNonce: number) {
+    this.nonce = initialNonce;
+  }
+
+  getNextNonce(): number {
+    return this.nonce++;
+  }
+}
 
 export const getIncompleteClaims = async (): Promise<Giveaway.Claim[]> => {
   const params: DynamoDB.DocumentClient.QueryInput = {
@@ -28,10 +40,11 @@ export const getIncompleteClaims = async (): Promise<Giveaway.Claim[]> => {
     },
     ExpressionAttributeValues: {
       ":pk": Giveaway.Claim.pk,
-      ":status": Giveaway.ClaimStatus.PENDING,
+      ":pending": Giveaway.ClaimStatus.PENDING,
+      ":failed": Giveaway.ClaimStatus.FAILED,
     },
     //filter out claims that have already been processed
-    FilterExpression: "#status = :status",
+    FilterExpression: "#status = :pending OR #status = :failed",
   };
 
   try {
@@ -40,6 +53,125 @@ export const getIncompleteClaims = async (): Promise<Giveaway.Claim[]> => {
       return [];
     }
     return data as Giveaway.Claim[];
+  } catch (err) {
+    console.error("Error querying DynamoDB - getIncompleteClaims", err);
+    throw err;
+  }
+};
+
+export const getLastTwoDaysOfClaims = async (): Promise<Giveaway.Claim[]> => {
+  const params: DynamoDB.DocumentClient.QueryInput = {
+    TableName: claimsTable,
+    KeyConditionExpression: "#pk = :pk",
+    ExpressionAttributeNames: {
+      "#pk": "pk",
+      "#status": "status",
+    },
+    ExpressionAttributeValues: {
+      ":pk": Giveaway.Claim.pk,
+      ":complete": Giveaway.ClaimStatus.COMPLETE,
+      ":ts": DateTime.now().minus({ days: 2 }).toMillis(),
+    },
+    //filter out claims that have already been processed
+    FilterExpression: "#status = :complete AND #ts > :ts",
+  };
+
+  try {
+    const data = await largeQuery(params);
+    if (!data.length) {
+      return [];
+    }
+    return data as Giveaway.Claim[];
+  } catch (err) {
+    console.error("Error querying DynamoDB - getIncompleteClaims", err);
+    throw err;
+  }
+};
+
+export const obtainUserGiveawayTransactionList = async (giveawayId: string, userId: string): Promise<Giveaway.TransactionList> => {
+  let userTransactionList = await getUserGiveawayTransactionList(giveawayId, userId);
+  if (userTransactionList) {
+    return userTransactionList;
+  } else {
+    return await createNewUserGiveawayTransactionList(giveawayId, userId);
+  }
+};
+
+export const createNewUserGiveawayTransactionList = async (giveawayId: string, userId: string): Promise<Giveaway.TransactionList> => {
+  const transactionList: Giveaway.TransactionList = new Giveaway.TransactionList({
+    sk: uuidv4(),
+    userId,
+    giveawayId,
+    transactionIds: [],
+  });
+
+  const params: DynamoDB.DocumentClient.PutItemInput = {
+    TableName: transactionsTable,
+    Item: transactionList,
+  };
+
+  try {
+    await docClient.put(params).promise();
+    return transactionList;
+  } catch (err) {
+    console.error("Error querying DynamoDB - createNewUserGiveawayTransactionList", err);
+    throw err;
+  }
+};
+
+export const getUserGiveawayTransactionList = async (giveawayId: string, userId: string): Promise<Giveaway.TransactionList | undefined> => {
+  const params: DynamoDB.DocumentClient.QueryInput = {
+    TableName: transactionsTable,
+    IndexName: "userId-index",
+    KeyConditionExpression: "#pk = :pk AND #userId = :userId",
+    ExpressionAttributeNames: {
+      "#pk": "pk",
+      "#userId": "userId",
+      "#giveawayId": "giveawayId",
+    },
+    ExpressionAttributeValues: {
+      ":pk": Giveaway.TransactionList.pk,
+      ":userId": userId,
+      ":giveawayId": giveawayId,
+    },
+    FilterExpression: "#giveawayId = :giveawayId",
+  };
+
+  try {
+    const data = await largeQuery(params);
+    if (!data.length) {
+      return;
+    }
+    return data[0] as Giveaway.TransactionList;
+  } catch (err) {
+    console.error("Error querying DynamoDB - getUserGiveawayTransactionList", err);
+    throw err;
+  }
+};
+
+export const updateUserGiveawayTransactionList = async (giveawayId: string, userId: string, txHashs: string[]): Promise<Giveaway.TransactionList> => {
+  const userTransactionList = await obtainUserGiveawayTransactionList(giveawayId, userId);
+
+  userTransactionList.transactionIds = [...new Set([...userTransactionList.transactionIds, ...txHashs])];
+  const params: DynamoDB.DocumentClient.UpdateItemInput = {
+    TableName: mainTable,
+    Key: {
+      pk: Giveaway.Config.pk,
+      sk: giveawayId,
+    },
+    UpdateExpression: `SET #transactionIds = :new_item`,
+    ExpressionAttributeNames: {
+      "#transactionIds": "transactionIds",
+    },
+    ExpressionAttributeValues: {
+      ":new_item": userTransactionList.transactionIds,
+    },
+  };
+
+  try {
+    await docClient.update(params).promise();
+
+    return userTransactionList;
   } catch (err) {
     console.error("Error querying DynamoDB - getIncompleteClaims", err);
     throw err;
@@ -188,59 +320,64 @@ export const findItemsWithSharedContract = (items: Giveaway.Item[]): { [contract
 // Send Wearables For One Claim
 export const sendWearables = async (
   groupedItemIds: { [contractAddress: string]: string[] },
-  claim: Giveaway.Claim
+  claim: Giveaway.Claim,
+  nonceManager: NonceManager
 ): Promise<{ success: boolean; transaction: ContractTransaction | unknown; error?: any }[]> => {
   try {
-    const nonce = (await ethersWallet.getTransactionCount("latest"));
-    job.log(`Got nonce ${nonce}`);
-    console.log("Got nonce", nonce);
-    console.log("Sending wearables", groupedItemIds);
     const transactions: { success: boolean; transaction: ContractTransaction | unknown; error?: any }[] = [];
-    return await new Promise(async (resolve) => {
-      for (let i = 0; i < Object.keys(groupedItemIds).length; i++) {
-        const contractAddress = Object.keys(groupedItemIds)[i];
 
-        job.log(`Sending wearables - grouped ids: ${groupedItemIds}`);
-        job.log(`Sending wearables for contract ${contractAddress}`);
-        const nftContract = new ethers.Contract(contractAddress, dclNft, ethersWallet);
-        try {
-          const estimateGasOptionsResponse = await estimateGasOptions(nftContract, groupedItemIds[contractAddress], claim.to, nonce + i);
-          if (!estimateGasOptionsResponse.success || !estimateGasOptionsResponse.options) {
-            throw Error(JSON.stringify(estimateGasOptionsResponse));
-          }
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          const { options } = estimateGasOptionsResponse;
+    const groupedItemKeys = Object.keys(groupedItemIds);
+    console.log("Grouped item keys:", groupedItemKeys);
 
-          options.nonce = nonce + i;
+    for (let i = 0; i < groupedItemKeys.length; i++) {
+      const contractAddress = groupedItemKeys[i];
+      const nonce = nonceManager.getNextNonce();
+      console.log(`Iteration: ${i}, Contract Address: ${contractAddress}, Nonce: ${nonce}`);
 
-          const mintTransaction = await mintNewWearables(nftContract, groupedItemIds[contractAddress], claim.to, options);
-          console.log("Minted transaction", mintTransaction.transaction.hash);
-          if (claim.status !== mintTransaction.status) {
-            await updateClaimStatus({ ...claim, status: mintTransaction.status });
-          }
-          transactions.push(mintTransaction);
-        } catch (error: any) {
-          const mintedOut = error.code === "UNPREDICTABLE_GAS_LIMIT" && error.reason === "execution reverted: _issueToken: ITEM_EXHAUSTED";
-          if (mintedOut && groupedItemIds.length) {
-            claim.status = Giveaway.ClaimStatus.PARTIAL_FAILURE;
-            await updateClaimStatus(claim);
-          } else if (claim.status === Giveaway.ClaimStatus.IN_PROGRESS) {
-            claim.status = Giveaway.ClaimStatus.FAILED;
-            await updateClaimStatus(claim);
-          }
-          transactions.push({ success: false, transaction: {}, error });
+      try {
+        console.log(`Before estimateGasOptions: i = ${i}, nonce = ${nonce}`);
+        const estimateGasOptionsResponse = await estimateGasOptions(new ethers.Contract(contractAddress, dclNft, ethersWallet), groupedItemIds[contractAddress], claim.to, nonce);
+        console.log(`After estimateGasOptions: i = ${i}`);
+
+        if (!estimateGasOptionsResponse.success || !estimateGasOptionsResponse.options) {
+          claim.status = Giveaway.ClaimStatus.PENDING;
+          await updateClaimStatus(claim);
+          continue;
         }
+
+        const { options } = estimateGasOptionsResponse;
+        options.nonce = nonce;
+        console.log("Nonce should be", options.nonce, i);
+
+        const mintTransaction = await mintNewWearables(new ethers.Contract(contractAddress, dclNft, ethersWallet), groupedItemIds[contractAddress], claim.to, options);
+        console.log("Minted transaction", mintTransaction.transaction.hash);
+        if (claim.status !== mintTransaction.status) {
+          await updateClaimStatus({ ...claim, status: mintTransaction.status });
+        }
+        transactions.push(mintTransaction);
+      } catch (error: any) {
+        console.log(`Error caught in loop: i = ${i}, nonce = ${nonce}`, error);
+        const mintedOut = error.code === "UNPREDICTABLE_GAS_LIMIT" && error.reason === "execution reverted: _issueToken: ITEM_EXHAUSTED";
+        if (mintedOut && groupedItemIds.length) {
+          claim.status = Giveaway.ClaimStatus.PARTIAL_FAILURE;
+          await updateClaimStatus(claim);
+        } else if (claim.status === Giveaway.ClaimStatus.IN_PROGRESS) {
+          claim.status = Giveaway.ClaimStatus.FAILED;
+          await updateClaimStatus(claim);
+        }
+        transactions.push({ success: false, transaction: {}, error });
       }
-      resolve(transactions);
-    });
+    }
+
+    return transactions;
   } catch (error) {
     console.error("Error sending wearables", error);
     throw error;
   }
 };
 
-// Send One Or More Wearables Within The Same Contract
-export const estimateGasOptions = async (nftContract: ethers.Contract, itemIds: string[], to: string, nonce: number) => {
+// Estimate gas prices
+export const estimateGasOptions = async (nftContract: ethers.Contract, itemIds: string[], to: string, nonce?: number) => {
   const walletArray = Array(itemIds.length).fill(to);
   try {
     const limits = await getGasLimits("ETH:137");
@@ -249,7 +386,6 @@ export const estimateGasOptions = async (nftContract: ethers.Contract, itemIds: 
     const maxGasLimitUnit = limits?.gas_limit ? limits.gas_limit.unit : "gwei";
     const maxGasLimit = limits?.gas_limit ? limits.gas_limit.value : 3000;
     const gasBuffer = limits?.gas_buffer ? limits.gas_buffer.value : 3000;
-    console.log("Gas limits:", maxGasPrice);
 
     const estimatedGasPrice = await provider.getGasPrice();
     const estimatedGasLimit = await nftContract.estimateGas.issueTokens(walletArray, itemIds);
@@ -263,7 +399,7 @@ export const estimateGasOptions = async (nftContract: ethers.Contract, itemIds: 
 
     if (convertedGasPrice > maxGasPrice || convertedGasLimit > maxGasPrice * itemIds.length || convertedGasLimit > maxGasLimit) {
       console.log(`GAS LIMITED! - GAS PRICE: ${convertedGasPrice}| MAX GAS PRICE: ${maxGasPrice} | GAS LIMIT: ${convertedGasLimit} | MAX GAS LIMIT: ${maxGasLimit} `);
-      throw Error(JSON.stringify({ success: false, error: "Estimated gas price too high (Prices shown in Wei)", gasPrice, gasLimit }));
+      return { success: false, error: "Estimated gas price too high (Prices shown in Wei)", gasPrice, gasLimit };
     }
 
     return { success: true, options };
@@ -271,6 +407,24 @@ export const estimateGasOptions = async (nftContract: ethers.Contract, itemIds: 
     console.log(error.code, error.reason);
     return { success: false, error: error?.code, reason: error?.reason };
   }
+};
+
+export const checkIfGasLimited = async () => {
+  const limits = await getGasLimits("ETH:137");
+  const maxGasPriceUnit = limits?.gas_price ? limits?.gas_price?.unit : "gwei";
+  const maxGasPrice = limits?.gas_price ? limits.gas_price.value : 3000;
+  const gasBuffer = limits?.gas_buffer ? limits.gas_buffer.value : 3000;
+
+  const estimatedGasPrice = await provider.getGasPrice();
+  const gasPrice = estimatedGasPrice && Number(ethers.utils.formatUnits(estimatedGasPrice, "wei")) + gasBuffer;
+  const convertedGasPrice = estimatedGasPrice && Number(ethers.utils.formatUnits(estimatedGasPrice, maxGasPriceUnit));
+
+  if (convertedGasPrice && convertedGasPrice > maxGasPrice) {
+    console.log(`GAS LIMITED! - GAS PRICE: ${convertedGasPrice}| MAX GAS PRICE: ${maxGasPrice} `);
+    return { gasLimited: true, error: "Estimated gas price too high (Prices shown in Wei)", gasPrice };
+  }
+
+  return { gasLimited: false };
 };
 
 // Send One Or More Wearables Within The Same Contract
@@ -333,13 +487,12 @@ export const increaseClaimCountOfGiveaway = async (giveawayId: string, claimCoun
       pk: Giveaway.Config.pk,
       sk: giveawayId,
     },
-    UpdateExpression: "ADD #claims :claimCount, #allocatedCredits :claimCount",
+    UpdateExpression: "ADD #claims :claimCount",
     ExpressionAttributeNames: {
       "#claims": "claimCount",
-      "#allocatedCredits": "allocatedCredits",
     },
     ExpressionAttributeValues: {
-      ":claimCount": -claimCount,
+      ":claimCount": claimCount,
     },
   };
 
@@ -353,19 +506,19 @@ export const increaseClaimCountOfGiveaway = async (giveawayId: string, claimCoun
 };
 
 // Increase Allocated Credits for Giveaway
-export const decreaseCreditAllocationOfGiveaway = async (allocationId: string) => {
+export const decreaseCreditAllocationOfGiveaway = async (allocationId: string, claimCount: number) => {
   const params: DynamoDB.DocumentClient.UpdateItemInput = {
     TableName: mainTable,
     Key: {
       pk: Accounting.CreditAllocation.pk,
       sk: allocationId,
     },
-    UpdateExpression: "ADD #allocatedCredits :one",
+    UpdateExpression: "ADD #allocatedCredits :claimCount",
     ExpressionAttributeNames: {
       "#allocatedCredits": "allocatedCredits",
     },
     ExpressionAttributeValues: {
-      ":one": -1,
+      ":claimCount": -claimCount,
     },
   };
 
@@ -374,6 +527,35 @@ export const decreaseCreditAllocationOfGiveaway = async (allocationId: string) =
     return { success: true };
   } catch (err) {
     console.error("Error updating DynamoDB - decreaseCreditAllocationOfGiveaway", err);
+    throw err;
+  }
+};
+
+export const getCreditAllocationByGiveawayId = async (giveawayId: string): Promise<Accounting.CreditAllocation | undefined> => {
+  const params: DynamoDB.DocumentClient.QueryInput = {
+    TableName: mainTable,
+    IndexName: "giveawayId-index",
+    KeyConditionExpression: "#pk = :pk AND #giveawayId = :giveawayId",
+    ExpressionAttributeNames: {
+      "#pk": "pk",
+      "#giveawayId": "giveawayId",
+    },
+    ExpressionAttributeValues: {
+      ":pk": Accounting.CreditAllocation.pk,
+      ":giveawayId": giveawayId,
+    },
+  };
+
+  try {
+    const data = await largeQuery(params);
+
+    if (!data.length) {
+      return;
+    }
+
+    return data[0] as Accounting.CreditAllocation;
+  } catch (err) {
+    console.error("Error querying DynamoDB - getCreditAllocationByGiveawayId", err);
     throw err;
   }
 };

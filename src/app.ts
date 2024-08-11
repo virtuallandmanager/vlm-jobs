@@ -38,10 +38,12 @@ function generateDaysForYear(year: number): string[] {
 }
 
 const migrateOldData = async () => {
-  const sceneIds: string[] = await getAllSceneIds();
+  const sceneIds: string[] = await getAllSceneIds(),
+    days = generateDaysForYear(2024);
   console.log(`Found ${sceneIds.length} Scene IDs`);
 
-  generateDaysForYear(2024).forEach(async (date) => {
+  for (let i = 0; i < days.length; i++) {
+    const date = days[i];
     if (sceneIds.length < 1) {
       return {
         success: false,
@@ -49,8 +51,8 @@ const migrateOldData = async () => {
       };
     }
 
-    const startDate = DateTime.fromFormat(date, "yyyy-MM-dd").startOf("day").toUTC().toUnixInteger(),
-      endDate = DateTime.fromFormat(date, "yyyy-MM-dd").endOf("day").toUTC().toUnixInteger();
+    const startDate = DateTime.fromFormat(date, "yyyy-MM-dd").startOf("day").toUTC().toMillis(),
+      endDate = DateTime.fromFormat(date, "yyyy-MM-dd").endOf("day").toUTC().toMillis();
     let allAggregates;
 
     if (!sceneIds?.length) {
@@ -59,20 +61,21 @@ const migrateOldData = async () => {
         message: `No scene IDs found to aggregate data for ${DateTime.now().minus({ days: 1 }).toUTC().toISODate()}`,
       };
     }
+    console.log(`Getting Old Analytics Actions for ${date}`);
 
-    await Promise.all([
-      sceneIds.forEach(async (sceneId) => {
+    await Promise.all(
+      sceneIds.map(async (sceneId) => {
         const analyticsActions = await getAnalyticsActionsForScene({ sceneId, startDate, endDate });
 
         if (analyticsActions.length > 0) {
           console.log(`Creating Aggregation Job for ${sceneId} ${date}`);
-          analytics.addJob(`Create Daily Analytics Aggregate`, { date });
+          analytics.addJob(`Create Daily Analytics Aggregate - Migration`, { date, nonce: sceneId });
         } else {
           console.log(`0 actions to aggregate for ${sceneId} ${date}`);
         }
-      }),
-    ]);
-  });
+      })
+    );
+  }
 };
 
 async function setupBullArena() {
@@ -132,6 +135,7 @@ async function setupBullArena() {
 }
 
 const setupBullQueues = async () => {
+  const date = DateTime.now().minus({ days: 1 }).toUTC().toISODate();
   analytics.setupSchedule();
   balance.setupSchedule();
   claims.setupSchedule();
@@ -148,6 +152,7 @@ const setupBullQueues = async () => {
   const notificationWorker = new Worker(notifications.queue.name, resolveWorkerPath("Discord.worker"), { connection });
 
   balance.addJob("Initial Balance Check", { wallet: process.env.GIVEAWAY_WALLET_A, name: "Giveaway Wallet A" });
+  analytics.addJob(`Create Daily Analytics Aggregate`, { date: "2024-08-11" });
 
   analyticsAggregationWorker.on("completed", async (job, result) => {
     if (!result || !result.message) return;
@@ -172,18 +177,13 @@ const setupBullQueues = async () => {
 
   claimWorker.on("completed", async (job, result) => {
     if (!result || !result.message) return;
+    if (result.gasLimited) {
+      console.log(`Gas price too high. Skipping Claims`);
+      await notifications.addJob(`Send Notification - Gas Price Over Limit`, result.message);
+      return;
+    }
     await notifications.addJob(`Send Notification - Claims Check`, result);
     console.log(`Claim job completed. | Success: ${result.success} | Message: ${result.message}`);
-    if (result.updatedTransactions.length > 0) {
-      result.updatedTransactions.forEach(async (transaction: any) => {
-        console.log(`Updated Transaction: ${transaction}`);
-      });
-    }
-    if (result.transactionStates.length > 0) {
-      result.transactionStates.forEach(async (transaction: any) => {
-        console.log(`Transaction State: ${JSON.stringify(transaction)}`);
-      });
-    }
   });
 
   claimWorker.on("failed", async (job, result) => {

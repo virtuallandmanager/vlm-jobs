@@ -17,7 +17,7 @@ export namespace Accounting {
     claimId?: string; // The ID of the claim, if applicable
     userId?: string; // The ID of the user, if applicable
     status?: TransactionStatus; // The status of the transaction
-    ts?: number = DateTime.now().toUnixInteger();
+    ts?: number = DateTime.now().toMillis();
 
     constructor(config?: Partial<Transaction>) {
       this.sk = config?.sk || this.sk;
@@ -41,7 +41,7 @@ export namespace Accounting {
     giveawayId?: string; // ID of the giveaway to which credits are allocated
     allocatedCredits?: number; // Number of credits allocated
     balanceType?: BalanceType; // Type of credits allocated
-    ts?: EpochTimeStamp = DateTime.now().toUnixInteger();
+    ts?: EpochTimeStamp = DateTime.now().toMillis();
 
     constructor(config: Partial<CreditAllocation>) {
       Object.assign(this, config);
@@ -56,8 +56,8 @@ export namespace Accounting {
     sk?: string = uuidv4();
     address?: string;
     active?: boolean = true;
-    createdAt?: number = DateTime.now().toUnixInteger();
-    ts?: EpochTimeStamp = DateTime.now().toUnixInteger();
+    createdAt?: number = DateTime.now().toMillis();
+    ts?: EpochTimeStamp = DateTime.now().toMillis();
 
     constructor(config: Partial<Minter>) {
       Object.assign(this, config);

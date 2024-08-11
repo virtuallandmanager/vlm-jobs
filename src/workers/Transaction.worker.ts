@@ -13,12 +13,10 @@ const worker = async (job: Job) => {
   await job.log(`Found ${pendingTransactions.length} Pending Transactions`);
   for (const transaction of pendingTransactions) {
     await job.log(`Checking Transaction ${transaction.sk} - ${transaction.txType} - ${transaction.status} - ${transaction.blockchainTxIds?.length || "No"} Blockchain Transactions`);
-    if (!transaction.blockchainTxIds || transaction.blockchainTxIds?.length === 0) continue;
-
     const statuses = await Promise.all(
       transaction.blockchainTxIds?.map(async (txId: string) => {
         await job.log(`Getting Transaction Status for ${txId}`);
-        const status = await getBlockchainTransactionStatus(txId);
+        const status = await getBlockchainTransactionStatus(txId, transaction.ts);
         await job.log(`Transaction Status for ${txId} is ${status}`);
         return status;
       })
@@ -65,7 +63,7 @@ const worker = async (job: Job) => {
 
   await job.log(`Finished Checking Pending Transactions`);
 
-  const stillPending = pendingTransactions.filter((transaction) => transaction.status === Accounting.TransactionStatus.PENDING);
+  const stillPending = pendingTransactions.filter((transaction) => !transaction?.status || transaction.status === Accounting.TransactionStatus.PENDING);
 
   if (updatedTransactions.length === 0 && pendingTransactions.length === 0) {
     return {

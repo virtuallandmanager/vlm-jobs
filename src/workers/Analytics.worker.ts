@@ -1,13 +1,14 @@
 import { Job } from "bullmq";
 import { DateTime } from "luxon";
-import { createAnalyticsAggregates, getAllSceneIds, getAnalyticsActionsForScene, pushAnalyticsAggregatesToDynamoDB, setTTLForActions } from "../services/Analytics.service";
+import { createAnalyticsAggregates, getAllSceneIds, getAnalyticsActionsForScene, pushAnalyticsAggregatesToDynamoDB, saveDataAsJSON, setTTLForActions } from "../services/Analytics.service";
+import { Analytics } from "../models/Analytics.model";
 
 const worker = async (job: Job) => {
   try {
     job.log("Job Started.");
-    const startDate = DateTime.fromFormat(job.data.date, "yyyy-MM-dd").startOf("day").toUTC().toUnixInteger(),
-      endDate = DateTime.fromFormat(job.data.date, "yyyy-MM-dd").endOf("day").toUTC().toUnixInteger();
-    let allAggregates;
+    const startDate = DateTime.fromFormat(job.data.date, "yyyy-MM-dd").startOf("day").toUTC().toMillis(),
+      endDate = DateTime.fromFormat(job.data.date, "yyyy-MM-dd").endOf("day").toUTC().toMillis();
+    let allAggregates: { minute: Analytics.Aggregate; hour: Analytics.Aggregate; day: Analytics.Aggregate }[] = [];
 
     const sceneIds: string[] = await getAllSceneIds();
 
@@ -20,20 +21,18 @@ const worker = async (job: Job) => {
       };
     }
 
-    await Promise.all([
-      sceneIds.forEach(async (sceneId) => {
+    await Promise.all(
+      sceneIds.map(async (sceneId, i) => {
         job.log(`Started Getting Analytics Actions for ${sceneId}`);
 
+        await new Promise((resolve) => setTimeout(resolve, 250 * i));
         const analyticsActions = await getAnalyticsActionsForScene({ sceneId, startDate, endDate });
+        job.log(`Got ${analyticsActions.length} actions for ${sceneId}`);
 
         if (analyticsActions.length > 0) {
           job.log(`Started Creating Aggregates for ${sceneId} ${startDate}`);
         } else {
-          job.log(`0 actions to aggregate for ${sceneId} ${startDate}`);
-          return {
-            success: false,
-            message: `0 actions to aggregate for ${sceneId} ${startDate}`,
-          };
+          return;
         }
         job.log(`Started Creating Aggregates for ${sceneId}`);
         const { minute, hour, day } = await createAnalyticsAggregates({ sceneId, analyticsActions, startDate, endDate });
@@ -43,12 +42,14 @@ const worker = async (job: Job) => {
         allAggregates.push(aggregates);
         await pushAnalyticsAggregatesToDynamoDB([minute, hour, day]);
         await setTTLForActions({ analyticsActions });
-        job.log(JSON.stringify(aggregates));
-      }),
-    ]);
+        await saveDataAsJSON(analyticsActions, sceneId, job.data.date);
+        return;
+      })
+    );
+
     return {
       success: true,
-      message: `Created Analytics Aggregates for ${DateTime.fromSeconds(startDate).toUTC().toISODate()}`,
+      message: `Created Analytics Aggregates for ${DateTime.fromMillis(startDate).toUTC().toISODate()}`,
       allAggregates,
     };
   } catch (error) {

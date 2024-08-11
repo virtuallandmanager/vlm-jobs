@@ -11,7 +11,7 @@ export namespace Analytics {
     sceneId?: string;
     metadata?: unknown = {};
     aggregated?: boolean = false;
-    ts: EpochTimeStamp = DateTime.now().toUnixInteger();
+    ts: EpochTimeStamp = DateTime.now().toMillis();
 
     constructor(config: Action) {
       this.sk = config.sk || this.sk;
@@ -29,15 +29,16 @@ export namespace Analytics {
     pk?: string = Aggregate.pk;
     sk?: string = `${DateTime.now().minus({ days: 1 }).startOf("day").toISODate()}:${AggregateScale.MINUTE}`; // Sort Key
     sceneId?: string;
-    startDateTime: EpochTimeStamp = DateTime.now().minus({ days: 1 }).startOf("day").toUnixInteger();
-    endDateTime: EpochTimeStamp = DateTime.now().minus({ days: 1 }).endOf("day").toUnixInteger();
+    startDateTime: EpochTimeStamp = DateTime.now().minus({ days: 1 }).startOf("day").toMillis();
+    endDateTime: EpochTimeStamp = DateTime.now().minus({ days: 1 }).endOf("day").toMillis();
     actionCounts: ActionAggregate = {};
     scale?: AggregateScale = AggregateScale.MINUTE;
-    ts?: EpochTimeStamp = DateTime.now().toUnixInteger();
+    ts?: EpochTimeStamp = DateTime.now().toMillis();
 
     constructor(config: Aggregate) {
-      this.sk = DateTime.fromSeconds(config.startDateTime).toUTC().startOf("day").toISODate() + ":" + config.scale;
+      this.pk = config.pk || this.pk;
       this.sceneId = config.sceneId;
+      this.sk = `${this.sceneId}:${DateTime.fromMillis(config.startDateTime).toUTC().startOf("day").toISODate()}:${config.scale}`;
       this.startDateTime = config.startDateTime || this.startDateTime;
       this.endDateTime = config.endDateTime || this.endDateTime;
       this.actionCounts = config.actionCounts || this.actionCounts;

@@ -1,3 +1,4 @@
+import { S3Client } from "@aws-sdk/client-s3";
 import AWS, { DynamoDB } from "aws-sdk";
 import { DocumentClient } from "aws-sdk/clients/dynamodb";
 import { Job } from "bullmq";
@@ -8,18 +9,31 @@ export const claimsTable = process.env.NODE_ENV === "development" ? "vlm_claims_
 export const transactionsTable = process.env.NODE_ENV === "development" ? "vlm_transactions_dev" : "vlm_transactions";
 
 export let docClient: AWS.DynamoDB.DocumentClient;
+export let s3Client: S3Client;
 
-if ( true) {
+if (process.env.NODE_ENV === "development") {
   AWS.config.update({
     accessKeyId: process.env.AWS_ACCESS_KEY,
     secretAccessKey: process.env.AWS_SECRET_KEY,
     region: process.env.AWS_REGION,
   });
+  s3Client = new S3Client({
+    region: process.env.AWS_REGION || "us-east-2", // Default region if undefined
+  });
 } else {
   AWS.config.update({
     region: process.env.AWS_REGION,
   });
+  s3Client = new S3Client({
+    region: process.env.AWS_REGION || "us-east-2", // Default region if undefined
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY || "", // Provide a fallback value or throw an error
+      secretAccessKey: process.env.AWS_SECRET_KEY || "", // Provide a fallback value or throw an error
+    },
+  });
 }
+
+export const bucketName = process.env.S3_BUCKET; // Replace with your S3 bucket name
 
 docClient = new AWS.DynamoDB.DocumentClient();
 
@@ -62,20 +76,21 @@ export const largeQuery: CallableFunction = async (params: DocumentClient.QueryI
     } else {
       var data = await docClient.query(params).promise();
     }
+
+    if (data && data.Items && data.Items.length > 0) {
+      allData = [...allData, ...data.Items];
+    }
+
+    if (!params.Limit && data.LastEvaluatedKey) {
+      params.ExclusiveStartKey = data.LastEvaluatedKey;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      return await largeQuery(params, options, allData);
+    } else {
+      let finalData = allData;
+      return finalData;
+    }
   } catch (err) {
     console.error("Error querying DynamoDB - largeQuery", err);
     throw err;
-  }
-
-  if (data && data.Items && data.Items.length > 0) {
-    allData = [...allData, ...data.Items];
-  }
-
-  if (!params.Limit && data.LastEvaluatedKey) {
-    params.ExclusiveStartKey = data.LastEvaluatedKey;
-    return await largeQuery(params, options, allData);
-  } else {
-    let finalData = allData;
-    return finalData;
   }
 };

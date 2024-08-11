@@ -28,6 +28,7 @@
   "dependencies": {
     "@1password/connect": "^1.4.1",
     "@alch/alchemy-web3": "^1.4.7",
+    "@aws-sdk/client-s3": "^3.627.0",
     "@aws-sdk/client-secrets-manager": "^3.345.0",
     "@types/dotenv": "^8.2.0",
     "alchemy-sdk": "^3.1.0",

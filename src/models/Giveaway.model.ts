@@ -17,8 +17,8 @@ export namespace Giveaway {
     paused?: boolean;
     items?: Array<string | Item> = [];
     allocatedCredits?: number = 0;
-    createdAt?: number = DateTime.now().toUnixInteger();
-    ts?: EpochTimeStamp = DateTime.now().toUnixInteger();
+    createdAt?: number = DateTime.now().toMillis();
+    ts?: EpochTimeStamp = DateTime.now().toMillis();
 
     constructor(config: Partial<Config> = {}) {
       this.sk = config?.sk || this.sk;
@@ -64,7 +64,7 @@ export namespace Giveaway {
     pk?: string = Claim.pk;
     sk?: string = uuidv4();
     to: string;
-    userId?: string;
+    userId: string;
     clientIp: string;
     sceneId: string;
     eventId: string;
@@ -73,7 +73,7 @@ export namespace Giveaway {
     claimTs?: number;
     status?: ClaimStatus = ClaimStatus.PENDING;
     analyticsRecordId: string;
-    ts?: EpochTimeStamp = DateTime.now().toUnixInteger();
+    ts?: EpochTimeStamp = DateTime.now().toMillis();
 
     constructor(config: Claim) {
       this.sk = config?.sk || this.sk;
@@ -104,7 +104,7 @@ export namespace Giveaway {
     rarity?: string;
     category?: string;
     imageSrc?: string;
-    ts?: EpochTimeStamp = DateTime.now().toUnixInteger();
+    ts?: EpochTimeStamp = DateTime.now().toMillis();
 
     constructor(config: Item) {
       this.sk = config?.sk || this.sk;
@@ -130,7 +130,7 @@ export namespace Giveaway {
     messageOptions?: MessageOptions;
     type: ClaimResponseType;
     reason?: ClaimRejection;
-    ts?: EpochTimeStamp = DateTime.now().toUnixInteger();
+    ts?: EpochTimeStamp = DateTime.now().toMillis();
 
     constructor(config: ClaimResponse) {
       this.sk = config?.sk || this.sk;
@@ -138,6 +138,24 @@ export namespace Giveaway {
       this.type = config?.type;
       this.message = config?.message;
       this.messageOptions = config?.messageOptions;
+      this.ts = config?.ts;
+    }
+  }
+
+  export class TransactionList {
+    static pk: string = "vlm:event:giveaway:user:transactions";
+    pk?: string = TransactionList.pk;
+    sk?: string = uuidv4();
+    giveawayId?: string;
+    userId?: string;
+    transactionIds: string[];
+    ts?: EpochTimeStamp = DateTime.now().toMillis();
+
+    constructor(config: TransactionList) {
+      this.sk = config?.sk || this.sk;
+      this.giveawayId = config?.giveawayId;
+      this.userId = config?.userId;
+      this.transactionIds = config?.transactionIds;
       this.ts = config?.ts;
     }
   }

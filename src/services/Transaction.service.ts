@@ -6,19 +6,23 @@ import { docClient, transactionsTable } from "./Database.service";
 export const getPendingAirdropTransactions = async (): Promise<Accounting.Transaction[]> => {
   const params: DynamoDB.DocumentClient.QueryInput = {
     TableName: transactionsTable,
-    IndexName: "status-index",
-    KeyConditionExpression: "#pk = :pk AND #status = :pending",
+    // IndexName: "status-index",
+    KeyConditionExpression: "#pk = :pk",
     ExpressionAttributeNames: {
       "#pk": "pk",
       "#status": "status",
       "#txType": "txType",
+      "#blockchainTxIds": "blockchainTxIds",
     },
     ExpressionAttributeValues: {
       ":pk": Accounting.Transaction.pk,
-      ":pending": Accounting.TransactionStatus.PENDING,
+      ":completed": Accounting.TransactionStatus.COMPLETED,
+      ":failed": Accounting.TransactionStatus.FAILED,
       ":txType": Accounting.TransactionType.ITEM_GIVEAWAY,
+      ":empty": 0,
     },
-    FilterExpression: "#txType = :txType",
+    Limit: 100,
+    FilterExpression: "#txType = :txType AND #status <> :completed AND #status <> :failed AND attribute_exists(#blockchainTxIds) AND size(#blockchainTxIds) > :empty",
   };
 
   try {

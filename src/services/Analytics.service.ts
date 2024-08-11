@@ -1,7 +1,10 @@
 import { DynamoDB } from "aws-sdk";
 import { DateTime } from "luxon";
-import { analyticsTable, docClient, mainTable } from "./Database.service";
+import { analyticsTable, bucketName, docClient, largeQuery, mainTable, s3Client } from "./Database.service";
 import { Analytics } from "../models/Analytics.model";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import * as fs from "fs";
+import * as path from "path";
 
 export const getAllSceneIds = async (): Promise<string[]> => {
   const params: DynamoDB.DocumentClient.QueryInput = {
@@ -45,9 +48,9 @@ export const getAnalyticsActionsForScene = async (query: { sceneId: string; star
         ":endDate": endDate,
       },
     };
-    const result = await docClient.query(params).promise();
+    const result = await largeQuery(params);
 
-    return result.Items as Analytics.Action[];
+    return result as Analytics.Action[];
   } catch (err) {
     console.error("Error querying DynamoDB", err);
     throw err;
@@ -55,79 +58,93 @@ export const getAnalyticsActionsForScene = async (query: { sceneId: string; star
 };
 
 export const createAnalyticsAggregates = async (query: Analytics.AggregateQuery) => {
-  const { sceneId, analyticsActions, startDate, endDate } = query;
+  try {
+    const { sceneId, analyticsActions, startDate, endDate } = query;
 
-  const byMinute: Analytics.ActionAggregate = analyticsActions.reduce((acc: Analytics.ActionAggregate, metric) => {
-    const { name, ts } = metric;
-    const minute = DateTime.fromMillis(ts).startOf("minute").toISO();
-    if (!minute) return acc;
+    const byMinute: Analytics.ActionAggregate = analyticsActions.reduce((acc: Analytics.ActionAggregate, metric) => {
+      const { name, ts } = metric;
+      const minute = DateTime.fromMillis(ts).startOf("minute").toUTC().toISO({ includeOffset: false });
+      if (!minute) return acc;
 
-    if (!acc[name][minute]) {
-      acc[name][minute] = 1;
-    } else {
-      acc[name][minute]++;
-    }
+      if (!acc[name]) {
+        acc[name] = { [minute]: 1 };
+      }
+      if (!acc[name][minute]) {
+        acc[name][minute] = 1;
+      } else {
+        acc[name][minute]++;
+      }
 
-    return acc;
-  }, {});
+      return acc;
+    }, {});
 
-  const byHour: Analytics.ActionAggregate = analyticsActions.reduce((acc: Analytics.ActionAggregate, metric) => {
-    const { name, ts } = metric;
-    const hour = DateTime.fromMillis(ts).startOf("hour").toISO();
-    if (!hour) return acc;
+    const byHour: Analytics.ActionAggregate = analyticsActions.reduce((acc: Analytics.ActionAggregate, metric) => {
+      const { name, ts } = metric;
+      const hour = DateTime.fromMillis(ts).startOf("hour").toUTC().toISO({ includeOffset: false });
+      if (!hour) return acc;
 
-    if (!acc[name][hour]) {
-      acc[name][hour] = 1;
-    } else {
-      acc[name][hour]++;
-    }
+      if (!acc[name]) {
+        acc[name] = { [hour]: 1 };
+      }
+      if (!acc[name][hour]) {
+        acc[name][hour] = 1;
+      } else {
+        acc[name][hour]++;
+      }
 
-    return acc;
-  }, {});
+      return acc;
+    }, {});
 
-  const byDay: Analytics.ActionAggregate = analyticsActions.reduce((acc: Analytics.ActionAggregate, metric) => {
-    const { name, ts } = metric;
-    const day = DateTime.fromMillis(ts).startOf("day").toISO();
-    if (!day) return acc;
+    const byDay: Analytics.ActionAggregate = analyticsActions.reduce((acc: Analytics.ActionAggregate, metric) => {
+      const { name, ts } = metric;
+      const day = DateTime.fromMillis(ts).startOf("day").toUTC().toISO({ includeOffset: false });
+      if (!day) return acc;
 
-    if (!acc[name][day]) {
-      acc[name][day] = 1;
-    } else {
-      acc[name][day]++;
-    }
+      if (!acc[name]) {
+        acc[name] = { [day]: 1 };
+      }
+      if (!acc[name][day]) {
+        acc[name][day] = 1;
+      } else {
+        acc[name][day]++;
+      }
 
-    return acc;
-  }, {});
+      return acc;
+    }, {});
 
-  const minuteAggregate = new Analytics.Aggregate({
-    sceneId: sceneId,
-    startDateTime: startDate,
-    endDateTime: endDate,
-    actionCounts: byMinute,
-    scale: Analytics.AggregateScale.MINUTE,
-  });
+    const minuteAggregate = new Analytics.Aggregate({
+      sceneId: sceneId,
+      startDateTime: startDate,
+      endDateTime: endDate,
+      actionCounts: byMinute,
+      scale: Analytics.AggregateScale.MINUTE,
+    });
 
-  console.log(minuteAggregate);
+    console.log(minuteAggregate);
 
-  const hourAggregate = new Analytics.Aggregate({
-    sceneId: sceneId,
-    startDateTime: startDate,
-    endDateTime: endDate,
-    actionCounts: byHour,
-    scale: Analytics.AggregateScale.HOUR,
-  });
+    const hourAggregate = new Analytics.Aggregate({
+      sceneId: sceneId,
+      startDateTime: startDate,
+      endDateTime: endDate,
+      actionCounts: byHour,
+      scale: Analytics.AggregateScale.HOUR,
+    });
 
-  const dayAggregate = new Analytics.Aggregate({
-    sceneId: sceneId,
-    startDateTime: startDate,
-    endDateTime: endDate,
-    actionCounts: byDay,
-    scale: Analytics.AggregateScale.DAY,
-  });
+    const dayAggregate = new Analytics.Aggregate({
+      sceneId: sceneId,
+      startDateTime: startDate,
+      endDateTime: endDate,
+      actionCounts: byDay,
+      scale: Analytics.AggregateScale.DAY,
+    });
 
-  console.log(`{ minute: ${minuteAggregate}, hour: ${hourAggregate}, day: ${dayAggregate} }`);
+    console.log(`{ minute: ${minuteAggregate}, hour: ${hourAggregate}, day: ${dayAggregate} }`);
 
-  return { minute: minuteAggregate, hour: hourAggregate, day: dayAggregate };
+    return { minute: minuteAggregate, hour: hourAggregate, day: dayAggregate };
+  } catch (err) {
+    console.error("Error creating analytics aggregates", err);
+    throw err;
+  }
 };
 
 export const pushAnalyticsAggregatesToDynamoDB = async (aggregates: Analytics.Aggregate[]) => {
@@ -145,7 +162,8 @@ export const pushAnalyticsAggregatesToDynamoDB = async (aggregates: Analytics.Ag
 
   try {
     const data = await docClient.batchWrite(params).promise();
-    console.log("BatchWriteItem succeeded:", data);
+    // console.log("BatchWriteItem succeeded:", data);
+    return data;
   } catch (err) {
     console.error("Unable to batch write item(s). Error JSON:", JSON.stringify(err, null, 2));
   }
@@ -176,7 +194,7 @@ export const setTTLForActions = async function (query: { analyticsActions: Analy
               Item: {
                 ...action,
                 aggregated: true,
-                ttl: DateTime.now().plus({ days: 7 }).toUnixInteger(),
+                ttl: DateTime.now().plus({ days: 7 }).toMillis(),
               },
             },
           })),
@@ -184,9 +202,42 @@ export const setTTLForActions = async function (query: { analyticsActions: Analy
       };
 
       const data = await docClient.batchWrite(params).promise();
-      console.log("BatchWriteItem succeeded:", data);
+      // console.log("BatchWriteItem succeeded:", data);
+      return data;
     }
+    return;
   } catch (err) {
     console.error("Unable to batch write item(s). Error JSON:", JSON.stringify(err, null, 2));
   }
 };
+
+// Function to save the analytics data as a JSON file
+export const saveDataAsJSON = async (data: any, sceneId: string, date: string): Promise<void> => {
+  const jsonData = JSON.stringify(data, null, 2); // Pretty print with indentation
+  const fileName = `${sceneId}-${date}.json`;
+  const filePath = path.join(__dirname, fileName);
+
+  // Save the JSON file locally
+  fs.writeFileSync(filePath, jsonData, "utf-8");
+  console.log(`Analytics data saved to ${filePath}`);
+
+  // Upload the file to S3 (optional)
+  await uploadToS3(fileName, jsonData);
+};
+
+// Function to upload the JSON file to Amazon S3
+async function uploadToS3(fileName: string, jsonData: string): Promise<void> {
+  const uploadParams = {
+    Bucket: bucketName,
+    Key: `analytics/${fileName}`,
+    Body: jsonData,
+    ContentType: "application/json",
+  };
+
+  try {
+    await s3Client.send(new PutObjectCommand(uploadParams));
+    console.log(`Analytics data uploaded to S3: ${fileName}`);
+  } catch (err) {
+    console.error("Error uploading to S3:", err);
+  }
+}
