@@ -11,10 +11,8 @@ export const transactionsTable = process.env.NODE_ENV === "development" ? "vlm_t
 export let docClient: AWS.DynamoDB.DocumentClient;
 export let s3Client: S3Client;
 
-if (process.env.NODE_ENV === "development") {
+if (process.env.NODE_ENV === "production") {
   AWS.config.update({
-    accessKeyId: process.env.AWS_ACCESS_KEY,
-    secretAccessKey: process.env.AWS_SECRET_KEY,
     region: process.env.AWS_REGION,
   });
   s3Client = new S3Client({
@@ -22,6 +20,8 @@ if (process.env.NODE_ENV === "development") {
   });
 } else {
   AWS.config.update({
+    accessKeyId: process.env.AWS_ACCESS_KEY,
+    secretAccessKey: process.env.AWS_SECRET_KEY,
     region: process.env.AWS_REGION,
   });
   s3Client = new S3Client({

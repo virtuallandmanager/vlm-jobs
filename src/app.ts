@@ -34,6 +34,9 @@ function generateDaysForYear(year: number): string[] {
     }
   }
 
+  isoStrings.splice(0, 90);
+  isoStrings.splice(-141);
+
   return isoStrings;
 }
 
@@ -51,8 +54,8 @@ const migrateOldData = async () => {
       };
     }
 
-    const startDate = DateTime.fromFormat(date, "yyyy-MM-dd").startOf("day").toUTC().toMillis(),
-      endDate = DateTime.fromFormat(date, "yyyy-MM-dd").endOf("day").toUTC().toMillis();
+    const startDate = DateTime.fromFormat(date, "yyyy-MM-dd", { zone: "utc" }).startOf("day").toMillis(),
+      endDate = DateTime.fromFormat(date, "yyyy-MM-dd", { zone: "utc" }).endOf("day").toMillis();
     let allAggregates;
 
     if (!sceneIds?.length) {
@@ -71,7 +74,7 @@ const migrateOldData = async () => {
           console.log(`Creating Aggregation Job for ${sceneId} ${date}`);
           analytics.addJob(`Create Daily Analytics Aggregate - Migration`, { date, nonce: sceneId });
         } else {
-          console.log(`0 actions to aggregate for ${sceneId} ${date}`);
+          // console.log(`0 actions to aggregate for ${sceneId} ${date}`);
         }
       })
     );

@@ -63,7 +63,7 @@ export const createAnalyticsAggregates = async (query: Analytics.AggregateQuery)
 
     const byMinute: Analytics.ActionAggregate = analyticsActions.reduce((acc: Analytics.ActionAggregate, metric) => {
       const { name, ts } = metric;
-      const minute = DateTime.fromMillis(ts).startOf("minute").toUTC().toISO({ includeOffset: false });
+      const minute = DateTime.fromMillis(ts).toUTC().startOf("minute").toISO({ includeOffset: false });
       if (!minute) return acc;
 
       if (!acc[name]) {
@@ -80,7 +80,7 @@ export const createAnalyticsAggregates = async (query: Analytics.AggregateQuery)
 
     const byHour: Analytics.ActionAggregate = analyticsActions.reduce((acc: Analytics.ActionAggregate, metric) => {
       const { name, ts } = metric;
-      const hour = DateTime.fromMillis(ts).startOf("hour").toUTC().toISO({ includeOffset: false });
+      const hour = DateTime.fromMillis(ts).toUTC().startOf("hour").toISO({ includeOffset: false });
       if (!hour) return acc;
 
       if (!acc[name]) {
@@ -97,7 +97,7 @@ export const createAnalyticsAggregates = async (query: Analytics.AggregateQuery)
 
     const byDay: Analytics.ActionAggregate = analyticsActions.reduce((acc: Analytics.ActionAggregate, metric) => {
       const { name, ts } = metric;
-      const day = DateTime.fromMillis(ts).startOf("day").toUTC().toISO({ includeOffset: false });
+      const day = DateTime.fromMillis(ts).toUTC().startOf("day").toISO({ includeOffset: false });
       if (!day) return acc;
 
       if (!acc[name]) {
@@ -223,6 +223,7 @@ export const saveDataAsJSON = async (data: any, sceneId: string, date: string): 
 
   // Upload the file to S3 (optional)
   await uploadToS3(fileName, jsonData);
+  fs.unlinkSync(filePath); // Delete the file after uploading
 };
 
 // Function to upload the JSON file to Amazon S3

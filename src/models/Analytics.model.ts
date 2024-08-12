@@ -29,8 +29,8 @@ export namespace Analytics {
     pk?: string = Aggregate.pk;
     sk?: string = `${DateTime.now().minus({ days: 1 }).startOf("day").toISODate()}:${AggregateScale.MINUTE}`; // Sort Key
     sceneId?: string;
-    startDateTime: EpochTimeStamp = DateTime.now().minus({ days: 1 }).startOf("day").toMillis();
-    endDateTime: EpochTimeStamp = DateTime.now().minus({ days: 1 }).endOf("day").toMillis();
+    startDateTime: EpochTimeStamp = DateTime.now().toUTC().minus({ days: 1 }).startOf("day").toMillis();
+    endDateTime: EpochTimeStamp = DateTime.now().toUTC().minus({ days: 1 }).endOf("day").toMillis();
     actionCounts: ActionAggregate = {};
     scale?: AggregateScale = AggregateScale.MINUTE;
     ts?: EpochTimeStamp = DateTime.now().toMillis();

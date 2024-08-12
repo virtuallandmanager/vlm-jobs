@@ -6,8 +6,8 @@ import { Analytics } from "../models/Analytics.model";
 const worker = async (job: Job) => {
   try {
     job.log("Job Started.");
-    const startDate = DateTime.fromFormat(job.data.date, "yyyy-MM-dd").startOf("day").toUTC().toMillis(),
-      endDate = DateTime.fromFormat(job.data.date, "yyyy-MM-dd").endOf("day").toUTC().toMillis();
+    const startDate = DateTime.fromFormat(job.data.date, "yyyy-MM-dd", { zone: "utc" }).startOf("day").toMillis(),
+      endDate = DateTime.fromFormat(job.data.date, "yyyy-MM-dd", { zone: "utc" }).endOf("day").toMillis();
     let allAggregates: { minute: Analytics.Aggregate; hour: Analytics.Aggregate; day: Analytics.Aggregate }[] = [];
 
     const sceneIds: string[] = await getAllSceneIds();
@@ -17,7 +17,7 @@ const worker = async (job: Job) => {
     if (!sceneIds?.length) {
       return {
         success: false,
-        message: `No scene IDs found to aggregate data for ${DateTime.now().minus({ days: 1 }).toUTC().toISODate()}`,
+        message: `No scene IDs found to aggregate data for ${DateTime.now().toUTC().minus({ days: 1 }).toISODate()}`,
       };
     }
 
