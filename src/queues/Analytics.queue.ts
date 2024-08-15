@@ -13,7 +13,7 @@ export const scheduler = new QueueScheduler(queue.name, {
 export const setupSchedule = async () => {
   await queue.add(
     `Create Daily Analytics Aggregate`,
-    { date: DateTime.now().toISODate() },
+    { date: null },
     {
       repeat: {
         pattern: "0 0 * * *",
@@ -24,7 +24,8 @@ export const setupSchedule = async () => {
 };
 
 export const addJob = async (name: string, data: any) => {
-  const jobId = `${name}:${data.date}:${DateTime.now().toMillis()}${data.nonce ? `:${data.nonce}` : ""}`;
+  const date = data.date || DateTime.now().toISODate();
+  const jobId = `${name}:${date}:${DateTime.now().toMillis()}${data.nonce ? `:${data.nonce}` : ""}`;
   console.log("Adding Job: " + name);
   await queue.add(name, data, {
     jobId,

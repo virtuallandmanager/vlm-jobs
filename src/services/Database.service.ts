@@ -33,7 +33,7 @@ if (process.env.NODE_ENV === "production") {
   });
 }
 
-export const bucketName = process.env.S3_BUCKET; // Replace with your S3 bucket name
+export const bucketName = process.env.S3_BUCKET;
 
 docClient = new AWS.DynamoDB.DocumentClient();
 
