@@ -24,7 +24,7 @@ export const setupSchedule = async () => {
 };
 
 export const addJob = async (name: string, data: any) => {
-  const date = data.date || DateTime.now().toISODate();
+  const date = data.date || DateTime.now().minus({ hour: 1 }).toISODate();
   const jobId = `${name}:${date}:${DateTime.now().toMillis()}${data.nonce ? `:${data.nonce}` : ""}`;
   console.log("Adding Job: " + name);
   await queue.add(name, data, {
