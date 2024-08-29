@@ -161,10 +161,12 @@ const setupBullQueues = async () => {
     if (!result || !result.message) return;
     // console.log(`Job completed with result ${JSON.stringify(result)}`);
     // await notifications.addJob(`Send Notification - Aggregate Created`, result.message);
+    await notifications.addJob(`Send Notification - Analytics Job Completed`, result);
   });
 
   analyticsAggregationWorker.on("failed", async (job) => {
     console.log(`Analytics Job failed ${job.data}`);
+    await notifications.addJob(`Send Notification - Analytics Job Failed`, { message: job.failedReason });
     console.log(job.failedReason);
   });
 
@@ -180,10 +182,10 @@ const setupBullQueues = async () => {
   });
 
   claimWorker.on("completed", async (job, result) => {
-    if (!result || !result.message) return;
+    if (!result) return;
     if (result.gasLimited) {
       console.log(`Gas price too high. Skipping Claims`);
-      await notifications.addJob(`Send Notification - Gas Price Over Limit`, result.message);
+      await notifications.addJob(`Send Notification - Gas Price Over Limit`, result);
       return;
     }
     await notifications.addJob(`Send Notification - Claims Check`, result);
