@@ -34,8 +34,8 @@ function generateDaysForYear(year: number): string[] {
     }
   }
 
-  isoStrings.splice(0, 90);
-  isoStrings.splice(-141);
+  isoStrings.splice(0, 220);
+  isoStrings.splice(-100);
 
   return isoStrings;
 }
@@ -155,7 +155,7 @@ const setupBullQueues = async () => {
   const notificationWorker = new Worker(notifications.queue.name, resolveWorkerPath("Discord.worker"), { connection });
 
   balance.addJob("Initial Balance Check", { wallet: process.env.GIVEAWAY_WALLET_A, name: "Giveaway Wallet A" });
-  analytics.addJob(`Create Daily Analytics Aggregate`, { date: "2024-08-11" });
+  // analytics.addJob(`Create Daily Analytics Aggregate`, { date: "2024-08-11" });
 
   analyticsAggregationWorker.on("completed", async (job, result) => {
     if (!result || !result.message) return;
@@ -164,18 +164,19 @@ const setupBullQueues = async () => {
   });
 
   analyticsAggregationWorker.on("failed", async (job) => {
-    console.log(`Analytics Job failed with reason ${JSON.stringify(job.failedReason)}`);
+    console.log(`Analytics Job failed ${job.data}`);
+    console.log(job.failedReason);
   });
 
   balanceCheckWorker.on("completed", async (job, result) => {
     if (!result || !result.message) return;
     await notifications.addJob(`Send Notification - Balance Check`, result);
-    console.log(`Job completed with result ${JSON.stringify(result)}`);
+    console.log(`Balance Check Job completed`);
   });
 
   balanceCheckWorker.on("failed", async (job, result) => {
     await notifications.addJob(`Send Notification - Balance Check`, result);
-    console.log(`Balance Check Job failed with reason ${job.failedReason}`);
+    console.log(`Balance Check Job failed`);
   });
 
   claimWorker.on("completed", async (job, result) => {
@@ -196,13 +197,13 @@ const setupBullQueues = async () => {
 
   transactionWorker.on("completed", async (job, result) => {
     if (!result || !result.message) return;
-    console.log(`Job completed with result ${JSON.stringify(result)}`);
+    console.log(`Transaction Job completed`);
     await notifications.addJob(`Send Notification - Transaction Updater`, result);
   });
 
   transactionWorker.on("failed", async (job, result) => {
     if (!result || !result.message) return;
-    console.log(`Transaction Job failed with reason ${job.failedReason}`);
+    console.log(`Transaction Job failed`);
     await notifications.addJob(`Send Notification - Transaction Updater`, result);
   });
 
@@ -211,7 +212,7 @@ const setupBullQueues = async () => {
   });
 
   notificationWorker.on("failed", async (job) => {
-    console.log(`Notification Job failed with reason ${job.failedReason}`);
+    console.log(`Notification Job failed`);
   });
 
   process.on("SIGTERM", async () => {
@@ -229,4 +230,4 @@ const setupBullQueues = async () => {
 
 setupBullQueues();
 setupBullArena();
-// migrateOldData();
+migrateOldData();

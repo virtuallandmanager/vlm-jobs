@@ -163,7 +163,7 @@ const processPendingClaims = async (claims: Giveaway.Claim[]) => {
 
   const updatedTransactions = await Promise.all(
     transactionStates.map(async (transactionState) => {
-      job.log(`Processing Transaction State ${JSON.stringify(transactionState)}`);
+      job.log(`Processing Transaction State`);
       if (!transactionState?.success || !transactionState?.transactions?.length) return;
       const { transactions, claim } = transactionState,
         blockchainTxIds = transactions.map((transaction) => transaction.hash).filter((hash) => hash);
