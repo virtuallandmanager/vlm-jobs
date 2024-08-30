@@ -64,7 +64,6 @@ export const getLatestAnalyticsAggregate = async (sceneId: string) => {
     ExpressionAttributeNames: {
       "#pk": "pk",
       "#sceneId": "sceneId",
-      "#scale": "scale",
     },
     ExpressionAttributeValues: {
       ":pk": "vlm:analytics:aggregate",
