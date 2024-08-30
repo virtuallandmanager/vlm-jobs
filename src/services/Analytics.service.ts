@@ -57,6 +57,36 @@ export const getAnalyticsActionsForScene = async (query: { sceneId: string; star
   }
 };
 
+export const getLatestAnalyticsAggregate = async (sceneId: string) => {
+  const params: DynamoDB.DocumentClient.QueryInput = {
+    TableName: analyticsTable,
+    KeyConditionExpression: "#pk = :pk",
+    ExpressionAttributeNames: {
+      "#pk": "pk",
+      "#sceneId": "sceneId",
+      "#scale": "scale",
+    },
+    ExpressionAttributeValues: {
+      ":pk": "vlm:analytics:aggregate",
+      ":sceneId": sceneId,
+    },
+    ScanIndexForward: false,
+    Limit: 1,
+    FilterExpression: "#sceneId = :sceneId",
+  };
+
+  try {
+    const data = await docClient.query(params).promise();
+    if (!data.Items?.length) {
+      return null;
+    }
+    return data.Items[0] as Analytics.Aggregate;
+  } catch (err) {
+    console.error("Error querying DynamoDB", err);
+    throw err;
+  }
+};
+
 export const createAnalyticsAggregates = async (query: Analytics.AggregateQuery) => {
   try {
     const { sceneId, analyticsActions, startDate, endDate } = query;

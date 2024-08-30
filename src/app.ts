@@ -9,7 +9,7 @@ import transactions from "./queues/Transactions.queue";
 import analytics from "./queues/Analytics.queue";
 import { connection } from "./services/Redis.service";
 import path from "path";
-import { getAllSceneIds, getAnalyticsActionsForScene } from "./services/Analytics.service";
+import { getAllSceneIds, getAnalyticsActionsForScene, getLatestAnalyticsAggregate } from "./services/Analytics.service";
 
 // const __dirname = path.dirname(__filename);
 
@@ -40,45 +40,64 @@ function generateDaysForYear(year: number): string[] {
   return isoStrings;
 }
 
+export const generateDateRange = (startDateTime: number) => {
+  const dates = [];
+
+  // Convert the startDateTime to a Luxon DateTime object
+  let currentDate = DateTime.fromMillis(startDateTime).startOf("day");
+
+  // Get yesterday's date, starting from midnight
+  const yesterday = DateTime.now().minus({ days: 1 }).startOf("day");
+
+  // Loop through each day, adding to the array
+  while (currentDate <= yesterday) {
+    dates.push(currentDate.toISODate()); // Add the date as an ISO string (yyyy-mm-dd)
+    currentDate = currentDate.plus({ days: 1 }); // Move to the next day
+  }
+
+  return dates;
+};
+
 const migrateOldData = async () => {
-  const sceneIds: string[] = await getAllSceneIds(),
-    days = generateDaysForYear(2024);
+  const sceneIds: string[] = await getAllSceneIds();
   console.log(`Found ${sceneIds.length} Scene IDs`);
+  const datesToAggregate = new Set<string>();
+  if (!sceneIds?.length) {
+    return {
+      success: false,
+      message: `No scene IDs found to aggregate data for ${DateTime.now().minus({ days: 1 }).toUTC().toISODate()}`,
+    };
+  }
 
-  for (let i = 0; i < days.length; i++) {
-    const date = days[i];
-    if (sceneIds.length < 1) {
-      return {
-        success: false,
-        message: `No scene IDs found`,
-      };
+  sceneIds.forEach(async (sceneId) => {
+    const lastAggregateCreated = await getLatestAnalyticsAggregate(sceneId);
+
+    if (!lastAggregateCreated) {
+      return;
     }
 
-    const startDate = DateTime.fromFormat(date, "yyyy-MM-dd", { zone: "utc" }).startOf("day").toMillis(),
-      endDate = DateTime.fromFormat(date, "yyyy-MM-dd", { zone: "utc" }).endOf("day").toMillis();
-    let allAggregates;
+    const dateRange = generateDateRange(lastAggregateCreated?.startDateTime);
+    dateRange.forEach((date) => date && datesToAggregate.add(date));
+  });
 
-    if (!sceneIds?.length) {
-      return {
-        success: false,
-        message: `No scene IDs found to aggregate data for ${DateTime.now().minus({ days: 1 }).toUTC().toISODate()}`,
-      };
-    }
+  datesToAggregate.forEach(async (date) => {
     console.log(`Getting Old Analytics Actions for ${date}`);
 
     await Promise.all(
       sceneIds.map(async (sceneId) => {
+        const startDate = DateTime.fromFormat(date, "yyyy-MM-dd", { zone: "utc" }).startOf("day").toMillis(),
+          endDate = DateTime.fromFormat(date, "yyyy-MM-dd", { zone: "utc" }).endOf("day").toMillis();
         const analyticsActions = await getAnalyticsActionsForScene({ sceneId, startDate, endDate });
 
         if (analyticsActions.length > 0) {
           console.log(`Creating Aggregation Job for ${sceneId} ${date}`);
-          analytics.addJob(`Create Daily Analytics Aggregate - Migration`, { date, nonce: sceneId });
+          analytics.addJob(`Create Analytics Aggregate`, { date, nonce: sceneId });
         } else {
           // console.log(`0 actions to aggregate for ${sceneId} ${date}`);
         }
       })
     );
-  }
+  });
 };
 
 async function setupBullArena() {

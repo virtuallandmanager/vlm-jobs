@@ -5,7 +5,11 @@ import { Analytics } from "../models/Analytics.model";
 
 const worker = async (job: Job) => {
   try {
-    job.log("Job Started.");
+    if (!job.data.date) {
+      job.data.date = DateTime.now().minus({ days: 1 }).toISODate();
+    }
+    job.log("Job Started - Create Daily Analytics Aggregate");
+    job.log(`Creating Analytics Aggregates for ${job.data.date}`);
     const startDate = DateTime.fromFormat(job.data.date, "yyyy-MM-dd", { zone: "utc" }).startOf("day").toMillis(),
       endDate = DateTime.fromFormat(job.data.date, "yyyy-MM-dd", { zone: "utc" }).endOf("day").toMillis();
     let allAggregates: { minute: Analytics.Aggregate; hour: Analytics.Aggregate; day: Analytics.Aggregate }[] = [];

@@ -421,7 +421,7 @@ export const checkIfGasLimited = async () => {
 
   if (convertedGasPrice && convertedGasPrice > maxGasPrice) {
     console.log(`GAS LIMITED! - GAS PRICE: ${convertedGasPrice}| MAX GAS PRICE: ${maxGasPrice} `);
-    return { gasLimited: true, error: "Estimated gas price too high (Prices shown in Wei)", gasPrice };
+    return { gasLimited: true, message: "Estimated gas price too high (Prices shown in Wei)", gasPrice };
   }
 
   return { gasLimited: false };
