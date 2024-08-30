@@ -23,23 +23,6 @@ export function resolveWorkerPath(workerFileName: string): string {
   }
 }
 
-function generateDaysForYear(year: number): string[] {
-  const isoStrings: string[] = [];
-  let currentDate = DateTime.local(year, 1, 1);
-
-  while (currentDate.year === year) {
-    if (currentDate.isValid) {
-      isoStrings.push(currentDate.toISODate()); // Get the ISO date string
-      currentDate = currentDate.plus({ days: 1 }); // Increment to the next day
-    }
-  }
-
-  isoStrings.splice(0, 220);
-  isoStrings.splice(-100);
-
-  return isoStrings;
-}
-
 export const generateDateRange = (startDateTime: number) => {
   const dates = [];
 
