@@ -1,21 +1,5 @@
 import { Job } from "bullmq";
-import {
-  findItemsWithSharedContract,
-  getIncompleteClaims,
-  getGiveawayById,
-  getInsufficientCreditClaims,
-  sendWearables,
-  getGiveawayItems,
-  getGasLimits,
-  updateClaimStatus,
-  increaseClaimCountOfGiveaway,
-  getEventById,
-  checkIfGasLimited,
-  ethersWallet,
-  NonceManager,
-  updateUserGiveawayTransactionList,
-  getLastTwoDaysOfClaims,
-} from "../services/Claim.service";
+import { updateUserGiveawayTransactionList, getLastWeekOfClaims } from "../services/Claim.service";
 import { Giveaway } from "../models/Giveaway.model";
 import { addBlockchainTransactionIds, getTransactionById } from "../services/Transaction.service";
 import { ContractTransaction } from "ethers";
@@ -28,7 +12,7 @@ export let job: Job;
 const worker = async (newJob: Job) => {
   newJob.log("Giveaway transaction consolidation job Started.");
   job = newJob;
-  const completeClaims = await getLastTwoDaysOfClaims();
+  const completeClaims = await getLastWeekOfClaims();
   const claimsWithTransactionData = await addTransactionData(completeClaims);
   if (!claimsWithTransactionData?.length) {
     // no incomplete claims found
@@ -43,6 +27,10 @@ const worker = async (newJob: Job) => {
     await updateUserGiveawayTransactionList(claim.giveawayId, claim.userId, blockchainTxIds);
     return claim;
   });
+  return {
+    success: true,
+    message: `Consolidated ${claimsWithTransactionData.length} Claims`,
+  };
 };
 
 const addTransactionData = async (claims: Giveaway.Claim[]): Promise<{ claim: Giveaway.Claim; transaction: Accounting.Transaction | null }[]> => {

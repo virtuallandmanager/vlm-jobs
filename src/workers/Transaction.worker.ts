@@ -14,10 +14,22 @@ const worker = async (job: Job) => {
   for (const transaction of pendingTransactions) {
     await job.log(`Checking Transaction ${transaction.sk} - ${transaction.txType} - ${transaction.status} - ${transaction.blockchainTxIds?.length || "No"} Blockchain Transactions`);
     const statuses = await Promise.all(
-      transaction.blockchainTxIds?.map(async (txId: string) => {
+      transaction.blockchainTxIds?.map(async (txId: string, i: number) => {
         await job.log(`Getting Transaction Status for ${txId}`);
-        const status = await getBlockchainTransactionStatus(txId, transaction.ts);
+        await new Promise((resolve) => setTimeout(resolve, 250 * i));
+        const { status, txAmount } = await getBlockchainTransactionStatus(txId, transaction.ts);
         await job.log(`Transaction Status for ${txId} is ${status}`);
+        if (status === Accounting.TransactionStatus.COMPLETED && txAmount && !transaction.txAmount) {
+          await job.log(`Transaction Amount for ${txId} is ${txAmount}. Updating Transaction Amount.`);
+          transaction.txAmount = txAmount;
+        } else if (status === Accounting.TransactionStatus.COMPLETED && txAmount && transaction.txAmount) {
+          await job.log(`Transaction Amount for ${txId} is ${txAmount}. Updating Transaction Amount.`);
+          transaction.txAmount += txAmount;
+        } else if (status === Accounting.TransactionStatus.COMPLETED && !txAmount) {
+          await job.log(`Transaction Amount for ${txId} is 0. Skipping Transaction Amount.`);
+          transaction.txAmount = 0;
+        }
+
         return status;
       })
     );

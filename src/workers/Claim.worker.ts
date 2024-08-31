@@ -51,10 +51,8 @@ const rejuvenateClaims = async (claims: Giveaway.Claim[]) => {
   } else {
     await Promise.all([
       claims.map(async (claim) => {
-        const event = await getEventById(claim.eventId);
-        if ((event?.eventStart && event?.eventStart > Date.now()) || (event?.eventEnd && event.eventEnd < Date.now())) return { success: false };
         const giveaway = await getGiveawayById(claim.giveawayId);
-        if (!giveaway?.allocatedCredits) return { success: false };
+        if (!giveaway?.allocatedCredits) return { success: false, message: `${giveaway.name} giveaway is out of allocated credits` };
         claim.status = Giveaway.ClaimStatus.PENDING;
         await updateClaimStatus(claim);
         return claim;

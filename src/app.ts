@@ -4,6 +4,7 @@ import express from "express";
 import Arena from "bull-arena";
 import balance from "./queues/Balance.queue";
 import claims from "./queues/Claim.queue";
+import consolidation from "./queues/Consolidation.queue";
 import notifications from "./queues/Notification.queue";
 import transactions from "./queues/Transactions.queue";
 import analytics from "./queues/Analytics.queue";
@@ -144,6 +145,7 @@ const setupBullQueues = async () => {
   analytics.setupSchedule();
   balance.setupSchedule();
   claims.setupSchedule();
+  consolidation.setupSchedule();
   transactions.setupSchedule();
 
   const analyticsAggregationWorker = new Worker(analytics.queue.name, resolveWorkerPath("Analytics.worker"), { connection });
@@ -156,14 +158,14 @@ const setupBullQueues = async () => {
 
   const notificationWorker = new Worker(notifications.queue.name, resolveWorkerPath("Discord.worker"), { connection });
 
+  const consolidationWorker = new Worker(notifications.queue.name, resolveWorkerPath("Consolidation.worker"), { connection });
+
   balance.addJob("Initial Balance Check", { wallet: process.env.GIVEAWAY_WALLET_A, name: "Giveaway Wallet A" });
-  // analytics.addJob(`Create Daily Analytics Aggregate`, { date: "2024-08-11" });
 
   analyticsAggregationWorker.on("completed", async (job, result) => {
     if (!result || !result.message) return;
     // console.log(`Job completed with result ${JSON.stringify(result)}`);
-    // await notifications.addJob(`Send Notification - Aggregate Created`, result.message);
-    await notifications.addJob(`Send Notification - Analytics Job Completed`, result);
+    await notifications.addJob(`Send Notification - Aggregate Created`, result);
   });
 
   analyticsAggregationWorker.on("failed", async (job) => {
@@ -184,7 +186,7 @@ const setupBullQueues = async () => {
   });
 
   claimWorker.on("completed", async (job, result) => {
-    if (!result) return;
+    if (!result || !result.message) return;
     if (result.gasLimited) {
       console.log(`Gas price too high. Skipping Claims`);
       await notifications.addJob(`Send Notification - Gas Price Over Limit`, result);
@@ -197,6 +199,17 @@ const setupBullQueues = async () => {
   claimWorker.on("failed", async (job, result) => {
     await notifications.addJob(`Send Notification - Claims Check`, result);
     console.log(`Claim Job failed with reason ${job.failedReason}`);
+  });
+
+  consolidationWorker.on("completed", async (job, result) => {
+    if (!result || !result.message) return;
+    await notifications.addJob(`Send Notification - User/Tx Consolidation`, result);
+    console.log(`Consolidation job completed. | Success: ${result.success} | Message: ${result.message}`);
+  });
+
+  consolidationWorker.on("failed", async (job, result) => {
+    await notifications.addJob(`Send Notification - User/Tx Consolidation`, result);
+    console.log(`Consolidation Job failed with reason ${job.failedReason}`);
   });
 
   transactionWorker.on("completed", async (job, result) => {
@@ -225,6 +238,7 @@ const setupBullQueues = async () => {
     await balanceCheckWorker.close();
     await notificationWorker.close();
     await claimWorker.close();
+    await consolidationWorker.close();
     await transactionWorker.close();
     await analyticsAggregationWorker.close();
 
@@ -234,4 +248,20 @@ const setupBullQueues = async () => {
 
 setupBullQueues();
 setupBullArena();
-migrateOldData();
+// migrateOldData();
+
+// const pendingAirdrops = getPendingAirdropTransactions();
+// console.log("Checking for pending airdrops...");
+// pendingAirdrops.then((transactions) => {
+//   console.log(`Found ${transactions.length} pending transactions`);
+//   transactions[0].blockchainTxIds.forEach((txId) => {
+//     console.log(txId);
+//     getBlockchainTransactionStatus(txId, transactions[0].ts)
+//       .then((status) => {
+//         console.log(status);
+//       })
+//       .catch((err) => {
+//         console.error(err);
+//       });
+//   });
+// });

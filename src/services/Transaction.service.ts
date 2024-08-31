@@ -1,6 +1,8 @@
 import { DynamoDB } from "aws-sdk";
 import { Accounting } from "../models/Accounting.model";
 import { docClient, transactionsTable } from "./Database.service";
+import { BigNumber, TransactionReceipt } from "alchemy-sdk";
+import { ethers } from "ethers";
 
 // Get all pending transactions
 export const getPendingAirdropTransactions = async (): Promise<Accounting.Transaction[]> => {
@@ -16,13 +18,14 @@ export const getPendingAirdropTransactions = async (): Promise<Accounting.Transa
     },
     ExpressionAttributeValues: {
       ":pk": Accounting.Transaction.pk,
-      ":completed": Accounting.TransactionStatus.COMPLETED,
-      ":failed": Accounting.TransactionStatus.FAILED,
+      ":pending": Accounting.TransactionStatus.PENDING,
+      ":null": null,
       ":txType": Accounting.TransactionType.ITEM_GIVEAWAY,
       ":empty": 0,
     },
     Limit: 100,
-    FilterExpression: "#txType = :txType AND #status <> :completed AND #status <> :failed AND attribute_exists(#blockchainTxIds) AND size(#blockchainTxIds) > :empty",
+    FilterExpression: "#txType = :txType AND attribute_exists(#blockchainTxIds) AND size(#blockchainTxIds) > :empty AND #status = :pending OR #status = :null",
+    // FilterExpression: "#txType = :txType AND attribute_exists(#blockchainTxIds) AND size(#blockchainTxIds) > :empty",
   };
 
   try {
@@ -107,4 +110,17 @@ export const markTransactionAsComplete = async (transactionId: string) => {
     console.error("Error marking transaction as complete", err);
     throw err;
   }
+};
+
+export const calculateMaticSpent = (receipt: TransactionReceipt): number => {
+  const gasUsed = receipt.gasUsed;
+  const effectiveGasPrice = receipt.effectiveGasPrice;
+
+  // Calculate the total cost in wei
+  const totalCostInWei = gasUsed.mul(effectiveGasPrice);
+
+  // Convert wei to MATIC (1 MATIC = 10^18 wei) using ethers utility function
+  const totalCostInMatic = ethers.utils.formatUnits(totalCostInWei, 18);
+
+  return Number(totalCostInMatic);
 };

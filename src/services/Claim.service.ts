@@ -59,20 +59,22 @@ export const getIncompleteClaims = async (): Promise<Giveaway.Claim[]> => {
   }
 };
 
-export const getLastTwoDaysOfClaims = async (): Promise<Giveaway.Claim[]> => {
+export const getLastWeekOfClaims = async (): Promise<Giveaway.Claim[]> => {
   const params: DynamoDB.DocumentClient.QueryInput = {
     TableName: claimsTable,
     KeyConditionExpression: "#pk = :pk",
     ExpressionAttributeNames: {
       "#pk": "pk",
       "#status": "status",
+      "#ts": "ts",
     },
     ExpressionAttributeValues: {
       ":pk": Giveaway.Claim.pk,
       ":complete": Giveaway.ClaimStatus.COMPLETE,
-      ":ts": DateTime.now().minus({ days: 2 }).toMillis(),
+      ":ts": DateTime.now().minus({ days: 7 }).toMillis(),
+      // ":ts": 0,
     },
-    //filter out claims that have already been processed
+    //filter down to claims that have already been processed
     FilterExpression: "#status = :complete AND #ts > :ts",
   };
 
@@ -154,10 +156,10 @@ export const updateUserGiveawayTransactionList = async (giveawayId: string, user
 
   userTransactionList.transactionIds = [...new Set([...userTransactionList.transactionIds, ...txHashs])];
   const params: DynamoDB.DocumentClient.UpdateItemInput = {
-    TableName: mainTable,
+    TableName: transactionsTable,
     Key: {
-      pk: Giveaway.Config.pk,
-      sk: giveawayId,
+      pk: Giveaway.TransactionList.pk,
+      sk: userTransactionList.sk,
     },
     UpdateExpression: `SET #transactionIds = :new_item`,
     ExpressionAttributeNames: {

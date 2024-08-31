@@ -11,7 +11,7 @@ export const transactionsTable = process.env.NODE_ENV === "development" ? "vlm_t
 export let docClient: AWS.DynamoDB.DocumentClient;
 export let s3Client: S3Client;
 
-if (process.env.NODE_ENV === "production") {
+if (process.env.NODE_ENV !== "production") {
   AWS.config.update({
     region: process.env.AWS_REGION,
   });
