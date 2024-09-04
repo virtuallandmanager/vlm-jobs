@@ -78,9 +78,7 @@ const processPendingClaims = async (claims: Giveaway.Claim[]) => {
   }
   if (!claims?.length) {
     // no incomplete claims found
-    return {
-      success: false,
-    };
+    throw new Error("No Claims found to process");
   } else {
     for (const claim of claims) {
       if (claim?.status === Giveaway.ClaimStatus.PENDING) {
@@ -156,6 +154,7 @@ const processPendingClaims = async (claims: Giveaway.Claim[]) => {
         transactions: [],
         claim,
       });
+      throw new Error(`Error processing claim ${claim.sk} - ${error}`);
     }
   }
 
