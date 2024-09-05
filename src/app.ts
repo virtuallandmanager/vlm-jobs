@@ -196,10 +196,10 @@ const setupBullQueues = async () => {
     console.log(`Claim job completed. | Success: ${result.success} | Message: ${result.message}`);
   });
 
-  // claimWorker.on("failed", async (job, result) => {
-  //   await notifications.addJob(`Send Notification - Claims Check`, result);
-  //   console.log(`Claim Job failed with reason ${job.failedReason}`);
-  // });
+  claimWorker.on("failed", async (job, result) => {
+    await notifications.addJob(`Send Notification - Claims Check`, result);
+    console.log(`Claim Job failed with reason ${job.failedReason}`);
+  });
 
   // consolidationWorker.on("completed", async (job, result) => {
   //   if (!result || !result.message) return;
@@ -207,10 +207,10 @@ const setupBullQueues = async () => {
   //   console.log(`Consolidation job completed. | Success: ${result.success} | Message: ${result.message}`);
   // });
 
-  consolidationWorker.on("failed", async (job, result) => {
-    await notifications.addJob(`Send Notification - User/Tx Consolidation`, result);
-    console.log(`Consolidation Job failed with reason ${job.failedReason}`);
-  });
+  // consolidationWorker.on("failed", async (job, result) => {
+  //   await notifications.addJob(`Send Notification - User/Tx Consolidation`, result);
+  //   console.log(`Consolidation Job failed with reason ${job.failedReason}`);
+  // });
 
   transactionWorker.on("completed", async (job, result) => {
     if (!result || !result.message) return;
@@ -238,7 +238,7 @@ const setupBullQueues = async () => {
     await balanceCheckWorker.close();
     await notificationWorker.close();
     await claimWorker.close();
-    await consolidationWorker.close();
+    // await consolidationWorker.close();
     await transactionWorker.close();
     await analyticsAggregationWorker.close();
 
