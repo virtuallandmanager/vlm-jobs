@@ -23,10 +23,12 @@ setInterval(async () => {
             webhook = process.env.DISCORD_ANALYTICS_JOBS_WEBHOOK;
             break;
           case "giveaway":
+          case "giveaways":
             webhook = process.env.DISCORD_GIVEAWAY_JOBS_WEBHOOK;
             break;
+          case "transaction":
           case "transactions":
-            webhook = process.env.DISCORD_TRANSACITONS_WEBHOOK;
+            webhook = process.env.DISCORD_TRANSACTIONS_WEBHOOK;
             break;
           case "tier-limit":
             webhook = process.env.DISCORD_TIER_LIMITING_WEBHOOK;
