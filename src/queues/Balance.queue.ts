@@ -21,6 +21,17 @@ export const setupSchedule = async () => {
       jobId: "daily-balance-check",
     }
   );
+
+  // await queue.add(
+  //   `Check Wallet Balance`,
+  //   { wallet: process.env.GIVEAWAY_WALLET_B, name: "Giveaway Wallet B" },
+  //   {
+  //     repeat: {
+  //       pattern: "0 13 * * *",
+  //     },
+  //     jobId: "daily-balance-check",
+  //   }
+  // );
 };
 
 export const addJob = async (name: string, data: any) => {

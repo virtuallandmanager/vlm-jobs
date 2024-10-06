@@ -1,6 +1,14 @@
 import { Job } from "bullmq";
 import { DateTime } from "luxon";
-import { createAnalyticsAggregates, getAllSceneIds, getAnalyticsActionsForScene, pushAnalyticsAggregatesToDynamoDB, saveDataAsJSON, setTTLForActions } from "../services/Analytics.service";
+import {
+  createAnalyticsAggregates,
+  getAllSceneIds,
+  getAnalyticsActionsForScene,
+  getSceneData,
+  pushAnalyticsAggregatesToDynamoDB,
+  saveDataAsJSON,
+  setTTLForActions,
+} from "../services/Analytics.service";
 import { Analytics } from "../models/Analytics.model";
 
 const worker = async (job: Job) => {
@@ -24,17 +32,19 @@ const worker = async (job: Job) => {
         message: `No scene IDs found to aggregate data for ${DateTime.now().toUTC().minus({ days: 1 }).toISODate()}`,
       };
     }
-
+    const scenesAggregated: { name: string; sk: string }[] = [];
     await Promise.all(
       sceneIds.map(async (sceneId, i) => {
         job.log(`Started Getting Analytics Actions for ${sceneId}`);
-
         await new Promise((resolve) => setTimeout(resolve, 250 * i));
         const analyticsActions = await getAnalyticsActionsForScene({ sceneId, startDate, endDate });
         job.log(`Got ${analyticsActions.length} actions for ${sceneId}`);
 
         if (analyticsActions.length > 0) {
           job.log(`Started Creating Aggregates for ${sceneId} ${startDate}`);
+          const scene = await getSceneData(sceneId);
+          if (!scene) return;
+          scenesAggregated.push(scene);
         } else {
           return;
         }
@@ -53,7 +63,10 @@ const worker = async (job: Job) => {
 
     return {
       success: true,
-      message: `Created Analytics Aggregates for ${DateTime.fromMillis(startDate).toUTC().toISODate()}`,
+      message: `Successfully created aggregate analytics for ${scenesAggregated.length} scenes:\n
+      Scenes:\n
+      ${scenesAggregated.map((scene) => `${scene.name} (${scene.sk})`).join("\n")}\n
+      Date Aggregated: ${DateTime.fromMillis(startDate).toUTC().toISODate()}`,
       allAggregates,
     };
   } catch (error) {

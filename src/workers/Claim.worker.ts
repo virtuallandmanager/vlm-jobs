@@ -73,12 +73,19 @@ const processPendingClaims = async (claims: Giveaway.Claim[]) => {
     return {
       success: false,
       error: true,
+      sendNotification: true,
+      gasLimited: true,
       message: `Gas price too high. Currently ${response.gasPrice} gwei. Skipping Claims.`,
     };
   }
   if (!claims?.length) {
     // no incomplete claims found
-    throw new Error("No Claims found to process");
+    return {
+      success: false,
+      error: false,
+      sendNotification: false,
+      message: `No claims found to process.`,
+    };
   } else {
     for (const claim of claims) {
       if (claim?.status === Giveaway.ClaimStatus.PENDING) {
@@ -173,6 +180,7 @@ const processPendingClaims = async (claims: Giveaway.Claim[]) => {
   return {
     success: true,
     transactionStates,
+    sendNotification: claims.length > 0,
     message: `Processed ${claims.length} Claims`,
     updatedTransactions,
   };

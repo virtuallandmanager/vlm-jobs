@@ -6,6 +6,27 @@ import { PutObjectCommand } from "@aws-sdk/client-s3";
 import * as fs from "fs";
 import * as path from "path";
 
+export const getSceneData = async (sceneId: string) => {
+  const params: DynamoDB.DocumentClient.GetItemInput = {
+    TableName: mainTable,
+    Key: {
+      pk: "vlm:scene",
+      sk: sceneId,
+    },
+  };
+
+  try {
+    const data = await docClient.get(params).promise();
+    if (!data.Item) {
+      return null;
+    }
+    return data.Item as { name: string; sk: string };
+  } catch (err) {
+    console.error("Error querying DynamoDB", err);
+    throw err;
+  }
+};
+
 export const getAllSceneIds = async (): Promise<string[]> => {
   const params: DynamoDB.DocumentClient.QueryInput = {
     TableName: mainTable,
@@ -30,9 +51,9 @@ export const getAllSceneIds = async (): Promise<string[]> => {
   }
 };
 
-export const getAnalyticsActionsForScene = async (query: { sceneId: string; startDate: EpochTimeStamp; endDate: EpochTimeStamp }) => {
+export const getAnalyticsActionsForScene = async (query: { sceneId: string; startDate: EpochTimeStamp; endDate: EpochTimeStamp; limit?: number }) => {
   try {
-    const { sceneId, startDate, endDate } = query;
+    const { sceneId, startDate, endDate, limit } = query;
     const params: DynamoDB.DocumentClient.QueryInput = {
       TableName: analyticsTable,
       IndexName: "sceneId-index",
@@ -47,7 +68,9 @@ export const getAnalyticsActionsForScene = async (query: { sceneId: string; star
         ":startDate": startDate,
         ":endDate": endDate,
       },
+      ...(limit && { Limit: limit }), // Add limit if it is provided
     };
+
     const result = await largeQuery(params);
 
     return result as Analytics.Action[];
@@ -79,6 +102,7 @@ export const getLatestAnalyticsAggregate = async (sceneId: string) => {
     if (!data.Items?.length) {
       return null;
     }
+    console.log("Latest Analytics Aggregate", data.Items[0]);
     return data.Items[0] as Analytics.Aggregate;
   } catch (err) {
     console.error("Error querying DynamoDB", err);

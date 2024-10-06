@@ -24,11 +24,11 @@ export function resolveWorkerPath(workerFileName: string): string {
   }
 }
 
-export const generateDateRange = (startDateTime: number) => {
+export const generateDateRange = (startDateTime: number | undefined) => {
   const dates = [];
 
   // Convert the startDateTime to a Luxon DateTime object
-  let currentDate = DateTime.fromMillis(startDateTime).startOf("day");
+  let currentDate = startDateTime ? DateTime.fromMillis(startDateTime).startOf("day") : DateTime.now().minus({ days: 90 }).startOf("day");
 
   // Get yesterday's date, starting from midnight
   const yesterday = DateTime.now().minus({ days: 1 }).startOf("day");
@@ -43,45 +43,59 @@ export const generateDateRange = (startDateTime: number) => {
 };
 
 const migrateOldData = async () => {
-  const sceneIds: string[] = await getAllSceneIds();
-  console.log(`Found ${sceneIds.length} Scene IDs`);
-  const datesToAggregate = new Set<string>();
-  if (!sceneIds?.length) {
-    return {
-      success: false,
-      message: `No scene IDs found to aggregate data for ${DateTime.now().minus({ days: 1 }).toUTC().toISODate()}`,
-    };
-  }
+  try {
+    console.log(`Aggregating Any Old Analytics Data...`);
+    const sceneIds: string[] = await getAllSceneIds();
+    console.log(`Found ${sceneIds.length} Scene IDs`);
+    const datesToAggregate = new Set<string>();
 
-  sceneIds.forEach(async (sceneId) => {
-    const lastAggregateCreated = await getLatestAnalyticsAggregate(sceneId);
-
-    if (!lastAggregateCreated) {
-      return;
+    if (!sceneIds?.length) {
+      const noDataMessage = `No scene IDs found to aggregate data for ${DateTime.now().minus({ days: 1 }).toUTC().toISODate()}`;
+      console.log(noDataMessage);
+      return { success: false, message: noDataMessage };
     }
 
-    const dateRange = generateDateRange(lastAggregateCreated?.startDateTime);
-    dateRange.forEach((date) => date && datesToAggregate.add(date));
-  });
+    for (const sceneId of sceneIds) {
+      const lastAggregateCreated = await getLatestAnalyticsAggregate(sceneId);
 
-  datesToAggregate.forEach(async (date) => {
-    console.log(`Getting Old Analytics Actions for ${date}`);
+      if (lastAggregateCreated?.startDateTime) {
+        console.log(`Last Aggregate Created for ${sceneId} was ${DateTime.fromMillis(lastAggregateCreated.startDateTime).toRelative()}`);
+      } else {
+        console.log(`No Aggregates found for ${sceneId}`);
+      }
 
-    await Promise.all(
-      sceneIds.map(async (sceneId) => {
-        const startDate = DateTime.fromFormat(date, "yyyy-MM-dd", { zone: "utc" }).startOf("day").toMillis(),
-          endDate = DateTime.fromFormat(date, "yyyy-MM-dd", { zone: "utc" }).endOf("day").toMillis();
-        const analyticsActions = await getAnalyticsActionsForScene({ sceneId, startDate, endDate });
+      const analyticsActions = await getAnalyticsActionsForScene({ sceneId, startDate: 0, endDate: DateTime.now().toMillis(), limit: 1 });
+
+      if (analyticsActions.length === 0) {
+        console.log(`No actions have been recorded for ${sceneId}`);
+        continue;
+      }
+
+      // Generate date range and add to set
+      const dateRange = generateDateRange(lastAggregateCreated?.startDateTime);
+      dateRange.forEach((date) => date && datesToAggregate.add(date));
+
+      // Process each date one by one
+      for (const date of datesToAggregate) {
+        console.log(`Getting Old Analytics Actions for ${date}`);
+
+        const startDate = DateTime.fromFormat(date, "yyyy-MM-dd", { zone: "utc" }).startOf("day").toMillis();
+        const endDate = DateTime.fromFormat(date, "yyyy-MM-dd", { zone: "utc" }).endOf("day").toMillis();
+
+        // Get analytics actions for the current sceneId and date
+        const analyticsActions = await getAnalyticsActionsForScene({ sceneId, startDate, endDate, limit: 1 });
 
         if (analyticsActions.length > 0) {
           console.log(`Creating Aggregation Job for ${sceneId} ${date}`);
-          analytics.addJob(`Create Analytics Aggregate`, { date, nonce: sceneId });
+          await analytics.addJob(`Create Analytics Aggregate`, { date, nonce: sceneId });
         } else {
-          // console.log(`0 actions to aggregate for ${sceneId} ${date}`);
+          console.log(`0 actions to aggregate for ${sceneId} ${date}`);
         }
-      })
-    );
-  });
+      }
+    }
+  } catch (err) {
+    console.error("Error during migration:", err);
+  }
 };
 
 async function setupBullArena() {
@@ -165,39 +179,39 @@ const setupBullQueues = async () => {
   analyticsAggregationWorker.on("completed", async (job, result) => {
     if (!result || !result.message) return;
     // console.log(`Job completed with result ${JSON.stringify(result)}`);
-    await notifications.addJob(`Send Notification - Aggregate Created`, result);
+    await notifications.addJob(`Send Notification - Aggregate Created`, { channel: "analytics", ...result });
   });
 
   analyticsAggregationWorker.on("failed", async (job) => {
     console.log(`Analytics Job failed ${job.data}`);
-    await notifications.addJob(`Send Notification - Analytics Job Failed`, { message: job.failedReason });
+    await notifications.addJob(`Send Notification - Analytics Job Failed`, { channel: "analytics", message: job.failedReason });
     console.log(job.failedReason);
   });
 
   balanceCheckWorker.on("completed", async (job, result) => {
     if (!result || !result.message) return;
-    await notifications.addJob(`Send Notification - Balance Check`, result);
+    await notifications.addJob(`Send Notification - Balance Check`, { channel: "transactions", ...result });
     console.log(`Balance Check Job completed`);
   });
 
   balanceCheckWorker.on("failed", async (job, result) => {
-    await notifications.addJob(`Send Notification - Balance Check`, result);
+    await notifications.addJob(`Send Notification - Balance Check`, { channel: "transactions", ...result });
     console.log(`Balance Check Job failed`);
   });
 
   claimWorker.on("completed", async (job, result) => {
-    if (!result || !result.message) return;
+    if (!result || !result.message || !result.sendNotification) return;
     if (result.gasLimited) {
       console.log(`Gas price too high. Skipping Claims`);
-      await notifications.addJob(`Send Notification - Gas Price Over Limit`, result);
+      await notifications.addJob(`Send Notification - Gas Price Over Limit`, { channel: "giveaway", ...result });
       return;
     }
-    await notifications.addJob(`Send Notification - Claims Check`, result);
+    await notifications.addJob(`Send Notification - Claims Check`, { channel: "giveaway", ...result });
     console.log(`Claim job completed. | Success: ${result.success} | Message: ${result.message}`);
   });
 
   claimWorker.on("failed", async (job, result) => {
-    await notifications.addJob(`Send Notification - Claims Check`, result);
+    await notifications.addJob(`Send Notification - Claims Check`, { channel: "giveaway", ...result });
     console.log(`Claim Job failed with reason ${job.failedReason}`);
   });
 
@@ -215,13 +229,13 @@ const setupBullQueues = async () => {
   transactionWorker.on("completed", async (job, result) => {
     if (!result || !result.message) return;
     console.log(`Transaction Job completed`);
-    await notifications.addJob(`Send Notification - Transaction Updater`, result);
+    await notifications.addJob(`Send Notification - Transaction Updater`, { channel: "transactions", ...result });
   });
 
   transactionWorker.on("failed", async (job, result) => {
     if (!result || !result.message) return;
     console.log(`Transaction Job failed`);
-    await notifications.addJob(`Send Notification - Transaction Updater`, result);
+    await notifications.addJob(`Send Notification - Transaction Updater`, { channel: "transactions", ...result });
   });
 
   notificationWorker.on("completed", async (job, result) => {
@@ -248,7 +262,7 @@ const setupBullQueues = async () => {
 
 setupBullQueues();
 setupBullArena();
-// migrateOldData();
+migrateOldData();
 
 // const pendingAirdrops = getPendingAirdropTransactions();
 // console.log("Checking for pending airdrops...");

@@ -3,15 +3,15 @@ import AWS, { DynamoDB } from "aws-sdk";
 import { DocumentClient } from "aws-sdk/clients/dynamodb";
 import { Job } from "bullmq";
 
-export const mainTable = process.env.NODE_ENV === "development" ? "vlm_main_dev" : "vlm_main";
-export const analyticsTable = process.env.NODE_ENV === "development" ? "vlm_analytics_dev" : "vlm_analytics";
-export const claimsTable = process.env.NODE_ENV === "development" ? "vlm_claims_dev" : "vlm_claims";
-export const transactionsTable = process.env.NODE_ENV === "development" ? "vlm_transactions_dev" : "vlm_transactions";
+export const mainTable = process.env.DB_MODE === "development" ? "vlm_main_dev" : "vlm_main";
+export const analyticsTable = process.env.DB_MODE === "development" ? "vlm_analytics_dev" : "vlm_analytics";
+export const claimsTable = process.env.DB_MODE === "development" ? "vlm_claims_dev" : "vlm_claims";
+export const transactionsTable = process.env.DB_MODE === "development" ? "vlm_transactions_dev" : "vlm_transactions";
 
 export let docClient: AWS.DynamoDB.DocumentClient;
 export let s3Client: S3Client;
 
-if (process.env.NODE_ENV !== "production") {
+if (process.env.NODE_ENV === "production") {
   AWS.config.update({
     region: process.env.AWS_REGION,
   });
